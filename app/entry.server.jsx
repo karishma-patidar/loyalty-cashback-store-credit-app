@@ -42,10 +42,9 @@ export default async function handleRequest(
           console.error(error);
         },
       },
-    );
-
-    // Automatically timeout the React renderer after 6 seconds, which ensures
+    ); // Automatically timeout the React renderer after 6 seconds, which ensures
     // React has enough time to flush down the rejected boundary contents
+
     setTimeout(abort, streamTimeout + 1000);
   });
 }

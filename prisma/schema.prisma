@@ -32,3 +32,49 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+model Program {
+  id               String   @id
+  shop             String
+  name             String   @default("Cashback on every purchase")
+  programType      String   @default("order")
+  amount           String   @default("15")
+  amountType       String   @default("Fixed amount")
+  issued           String   @default("0 INR")
+  budget           String   @default("Unlimited")
+  status           String   @default("Active")
+  startDate        String?
+  startTime        String?
+  endDate          String?
+  endTime          String?
+  enableEndDate    Boolean  @default(false)
+  enableExpiration Boolean  @default(false)
+  expirationType   String?
+  expirationDays   String?
+  expirationDate   String?
+  enableDelay      Boolean  @default(false)
+  delayDays        String?
+  channels         String?  // JSON string
+  eligibility      String?  // JSON string
+  msgCart          String?
+  msgProduct       String?
+  notifyEmail      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Transaction {
+  id           String   @id @default(uuid())
+  shop         String
+  orderId      String
+  orderName    String
+  customerId   String
+  customerName String
+  amount       Float
+  currency     String
+  status       String   @default("Completed")
+  emailStatus  String   @default("Sent")
+  type         String   @default("Cashback")
+  createdAt    DateTime @default(now())
+  issuedAt     DateTime @default(now())
+}

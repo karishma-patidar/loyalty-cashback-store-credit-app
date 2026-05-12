@@ -1,0 +1,531 @@
+<script>
+  window.LoyaltyCredit = {
+    amount: {{ active_program.amount | json }},
+    amountType: {{ active_program.amountType | json }},
+    maxAmount: {{ active_program.maxAmount | json }},
+    programType: {{ active_program.programType | json }},
+    msgCart: {{ active_program.msgCart | json }},
+    currencySymbol: {{ cart.currency.symbol | json }},
+    showCartDrawerPoints: {{ active_program.showCartDrawerPoints | default: false | json }},
+    eligibilityD2c: {{ active_program.eligibility.d2c | default: false | json }}
+  };
+
+  (function() {
+    const SELECTORS = ".quick-cart__main-content, #main-cart-items, .cart-item-list, #cart ul, .cart-drawer__line-items, .cart-drawer__items, .cart-drawer__body, .side-panel-content, .minicart__entry, #cart, .cart-drawer-content-item, #CartDrawerForm, #CartDrawer .drawer__content, cart-drawer-items, .cart__items, #cart-drawer-form, .drawer__items-title, #mini-cart-form, .mini-cart__line-item-list, .sidebar__body, .cart--body, .previewCartList, .cart-items__wrapper, .rebuy-cart__flyout-body, .items, .spurit-occ3__product-cards, .qsc2-drawer-body";
+
+    function formatMoney(cents) {
+      const value = (cents / 100).toFixed(2);
+      const symbol = window.LoyaltyCredit.currencySymbol || "$";
+      return `${symbol}${value}`;
+    }
+
+    async function updateCartDrawerCashback(container) {
+      try {
+        const res = await fetch('/cart.js');
+        const cartData = await res.json();
+
+        // Dynamically hide if cart is empty
+        if (!cartData || !cartData.items || cartData.items.length === 0 || cartData.item_count === 0) {
+          container.style.display = 'none';
+          return;
+        } else {
+          container.style.display = 'flex';
+        }
+        
+        let cashback_cents = 0;
+        const programType = window.LoyaltyCredit.programType || 'order';
+        const amountType = window.LoyaltyCredit.amountType || 'Fixed amount';
+        const amount = parseFloat(window.LoyaltyCredit.amount) || 0;
+        const maxAmount = parseFloat(window.LoyaltyCredit.maxAmount) || 0;
+
+        if (programType === 'product') {
+          // Dynamic calculation: Sum up cashback per cart item quantity
+          if (cartData.items && Array.isArray(cartData.items)) {
+            cartData.items.forEach(item => {
+              let item_cashback_cents = 0;
+              if (amountType === 'Percentage') {
+                let calculated_cents = (item.price * amount) / 100;
+                if (maxAmount > 0) {
+                  const max_cents = maxAmount * 100;
+                  if (calculated_cents > max_cents) {
+                    calculated_cents = max_cents;
+                  }
+                }
+                item_cashback_cents = calculated_cents;
+              } else {
+                item_cashback_cents = amount * 100;
+              }
+              cashback_cents += item_cashback_cents * item.quantity;
+            });
+          }
+        } else {
+          // Cashback by Order: Calculate against overall cart subtotal
+          const total_price_cents = cartData.total_price || 0;
+          if (amountType === 'Percentage') {
+            let calculated_cents = (total_price_cents * amount) / 100;
+            if (maxAmount > 0) {
+              const max_cents = maxAmount * 100;
+              if (calculated_cents > max_cents) {
+                calculated_cents = max_cents;
+              }
+            }
+            cashback_cents = calculated_cents;
+          } else {
+            cashback_cents = amount * 100;
+          }
+        }
+
+        const formatted = formatMoney(cashback_cents);
+        const rawMsg = window.LoyaltyCredit.msgCart || "You will get {loyalty_credit_amount} store credit after this purchase.";
+        const finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<strong>${formatted}</strong>`);
+        
+        const contentEl = container.querySelector('.loyalty-credit-content');
+        if (contentEl && contentEl.innerHTML !== finalMsg) {
+          contentEl.innerHTML = finalMsg;
+        }
+      } catch (e) {
+        console.error("Loyalty Credit Error calculating cashback:", e);
+      }
+    }
+
+    function debouncedCartUpdate(container) {
+      if (container._cartUpdateTimeout) {
+        clearTimeout(container._cartUpdateTimeout);
+      }
+      container._cartUpdateTimeout = setTimeout(() => {
+        updateCartDrawerCashback(container);
+      }, 250);
+    }
+
+    // --- Product Page Live Updates (Variants & Quantities) ---
+    function updateProductPageCashback(block, quantity = 1, variantPrice = null) {
+      const basePriceStr = block.getAttribute('data-product-price');
+      const amountStr = block.getAttribute('data-amount');
+      const amountType = block.getAttribute('data-amount-type');
+      const maxAmountStr = block.getAttribute('data-max-amount');
+      
+      let rawMsg = "Receive {loyalty_credit_amount} store credit when purchasing each item.";
+      try {
+        rawMsg = decodeURIComponent(block.getAttribute('data-msg-product')) || rawMsg;
+      } catch (e) {
+        rawMsg = block.getAttribute('data-msg-product') || rawMsg;
+      }
+
+      let basePrice = parseFloat(basePriceStr) || 0;
+      if (variantPrice !== null) {
+        basePrice = variantPrice;
+      }
+
+      const amount = parseFloat(amountStr) || 0;
+      const maxAmount = parseFloat(maxAmountStr) || 0;
+
+      let cashback_cents = 0;
+      if (amountType === 'Percentage') {
+        let calculated_cents = (basePrice * amount) / 100;
+        if (maxAmount > 0) {
+          const max_cents = maxAmount * 100;
+          if (calculated_cents > max_cents) {
+            calculated_cents = max_cents;
+          }
+        }
+        cashback_cents = calculated_cents;
+      } else {
+        cashback_cents = amount * 100;
+      }
+
+      const total_cashback_cents = cashback_cents * quantity;
+      const formatted = formatMoney(total_cashback_cents);
+      const finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<strong>${formatted}</strong>`);
+
+      const contentEl = block.querySelector('.loyalty-credit-content');
+      if (contentEl && contentEl.innerHTML !== finalMsg) {
+        contentEl.innerHTML = finalMsg;
+      }
+    }
+
+    function findProductQtyInput(block) {
+      let qtyInput = null;
+      // 1. Try inside the closest product form
+      const productForm = block.closest('form[action*="/cart/add"]') || document.querySelector('form[action*="/cart/add"]');
+      if (productForm) {
+        qtyInput = productForm.querySelector('input[name="quantity"], .quantity__input, .js-qty__input, [name="qty"]');
+      }
+      // 2. Try inside the closest section or product container
+      if (!qtyInput) {
+        const productContainer = block.closest('.product, .product-section, [id^="ProductSection"], .shopify-section');
+        if (productContainer) {
+          qtyInput = productContainer.querySelector('input[name="quantity"], .quantity__input, .js-qty__input, [name="qty"]');
+        }
+      }
+      // 3. Fallback to document-wide, excluding cart/drawer/minicart wrappers to prevent wrong quantity inputs
+      if (!qtyInput) {
+        const allInputs = document.querySelectorAll('input[name="quantity"], .quantity__input, .js-qty__input, [name="qty"]');
+        for (const input of allInputs) {
+          if (!input.closest('.cart, .cart-drawer, .minicart, .drawer, #cart, #CartDrawer, .cart-items, .cart-items__wrapper, .rebuy-cart')) {
+            qtyInput = input;
+            break;
+          }
+        }
+        if (!qtyInput && allInputs.length > 0) {
+          qtyInput = allInputs[0];
+        }
+      }
+      return qtyInput;
+    }
+
+    function setupProductPageListeners(block) {
+      const setupQtyObserver = () => {
+        const qtyInput = findProductQtyInput(block);
+        if (!qtyInput) return;
+
+        // If we already set up listeners on this specific input element, skip
+        if (qtyInput.dataset.loyaltyObserved === "true") {
+          const qty = parseInt(qtyInput.value) || 1;
+          updateProductPageCashback(block, qty);
+          return;
+        }
+        qtyInput.dataset.loyaltyObserved = "true";
+
+        let lastQty = null;
+        const handleQtyChange = () => {
+          const qty = parseInt(qtyInput.value) || 1;
+          if (qty === lastQty) return;
+          lastQty = qty;
+          updateProductPageCashback(block, qty);
+        };
+
+        // 1. Standard event listeners
+        qtyInput.addEventListener('input', handleQtyChange);
+        qtyInput.addEventListener('change', handleQtyChange);
+
+        // 2. MutationObserver on the input itself to detect programmatic changes to attributes (like 'value')
+        const inputObserver = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes') {
+              handleQtyChange();
+            }
+          });
+        });
+        inputObserver.observe(qtyInput, { attributes: true, attributeFilter: ['value', 'data-value'] });
+
+        // 3. MutationObserver on the parent element to detect changes to input or wrappers (extremely useful for custom quantity buttons)
+        if (qtyInput.parentElement) {
+          const parentObserver = new MutationObserver(() => {
+            handleQtyChange();
+          });
+          parentObserver.observe(qtyInput.parentElement, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            characterData: true
+          });
+        }
+
+        // 4. Intercept property setter for .value so we catch direct JS property mutations!
+        try {
+          const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+          if (descriptor && descriptor.set && !qtyInput._valueSetIntercepted) {
+            qtyInput._valueSetIntercepted = true;
+            const originalSet = descriptor.set;
+            Object.defineProperty(qtyInput, 'value', {
+              get: descriptor.get,
+              set: function(val) {
+                originalSet.call(this, val);
+                handleQtyChange();
+              },
+              configurable: true
+            });
+          }
+        } catch (e) {
+          console.error("Loyalty Credit: Error intercepting input value setter:", e);
+        }
+
+        // Initial update
+        handleQtyChange();
+      };
+
+      // Run it initially
+      setupQtyObserver();
+
+      const forms = document.querySelectorAll('form[action*="/cart/add"]');
+      forms.forEach(form => {
+        if (form.dataset.loyaltyFormObserved === "true") return;
+        form.dataset.loyaltyFormObserved = "true";
+
+        form.addEventListener('change', () => {
+          setTimeout(() => {
+            const variantInput = form.querySelector('input[name="id"], select[name="id"]');
+            const currentQtyInput = findProductQtyInput(block);
+            const qty = currentQtyInput ? (parseInt(currentQtyInput.value) || 1) : 1;
+
+            if (variantInput) {
+              const variantId = variantInput.value;
+              if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
+                const variants = window.ShopifyAnalytics.meta.product.variants || [];
+                const activeVariant = variants.find(v => String(v.id) === String(variantId));
+                if (activeVariant && activeVariant.price) {
+                  updateProductPageCashback(block, qty, activeVariant.price);
+                  return;
+                }
+              }
+            }
+            updateProductPageCashback(block, qty);
+          }, 100);
+        });
+      });
+    }
+
+    function setupCartPageListeners() {
+      // Find all quantity inputs on the cart page
+      const cartInputs = document.querySelectorAll('input[name^="updates"], .cart__qty-input, .cart-items input[type="number"], .quantity__input');
+      
+      cartInputs.forEach(input => {
+        // Exclude the product page quantity input
+        if (input.name === 'quantity' || input.id === 'Quantity' || input.classList.contains('js-qty__input')) {
+          if (document.body.classList.contains('template-product') || document.querySelector('.loyalty-credit-product-block')) {
+            const prodQty = findProductQtyInput(document.querySelector('.loyalty-credit-product-block') || document.body);
+            if (input === prodQty) return;
+          }
+        }
+
+        if (input.dataset.loyaltyCartObserved === "true") return;
+        input.dataset.loyaltyCartObserved = "true";
+
+        const handleCartQtyChange = () => {
+          const staticBlocks = document.querySelectorAll('.loyalty-credit-block:not(.loyalty-credit-product-block), .loyalty-credit-drawer-injected');
+          staticBlocks.forEach(block => {
+            debouncedCartUpdate(block);
+          });
+        };
+
+        // 1. Standard event listeners
+        input.addEventListener('input', handleCartQtyChange);
+        input.addEventListener('change', handleCartQtyChange);
+
+        // 2. MutationObserver on the input itself
+        const inputObserver = new MutationObserver((mutations) => {
+          mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes') {
+              handleCartQtyChange();
+            }
+          });
+        });
+        inputObserver.observe(input, { attributes: true, attributeFilter: ['value', 'data-value'] });
+
+        // 3. MutationObserver on parent wrapper
+        if (input.parentElement) {
+          const parentObserver = new MutationObserver(() => {
+            handleCartQtyChange();
+          });
+          parentObserver.observe(input.parentElement, {
+            attributes: true,
+            childList: true,
+            subtree: true,
+            characterData: true
+          });
+        }
+
+        // 4. Intercept direct JS modifications
+        try {
+          const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+          if (descriptor && descriptor.set && !input._valueSetIntercepted) {
+            input._valueSetIntercepted = true;
+            const originalSet = descriptor.set;
+            Object.defineProperty(input, 'value', {
+              get: descriptor.get,
+              set: function(val) {
+                originalSet.call(this, val);
+                handleCartQtyChange();
+              },
+              configurable: true
+            });
+          }
+        } catch (e) {
+          console.error("Loyalty Credit: Error intercepting cart input value setter:", e);
+        }
+      });
+    }
+
+    function injectBlock() {
+      // Real-time editor toggle support: clean up and stop if embed is disabled
+      const marker = document.getElementById('loyalty-credit-app-embed-marker');
+      if (!marker) {
+        const instantiated = document.querySelectorAll('.loyalty-credit-block');
+        instantiated.forEach(block => {
+          const parentBlock = block.closest(".shopify-block, [id^='shopify-block-']");
+          if (parentBlock) {
+            parentBlock.remove();
+          } else {
+            block.remove();
+          }
+        });
+        
+        const templates = document.querySelectorAll('.loyalty-credit-template');
+        templates.forEach(t => {
+          const parentBlock = t.closest(".shopify-block, [id^='shopify-block-']");
+          if (parentBlock) {
+            parentBlock.remove();
+          } else {
+            t.remove();
+          }
+        });
+
+        const existing = document.querySelector('.loyalty-credit-drawer-injected');
+        if (existing) existing.remove();
+        return;
+      }
+
+      const isEligible = window.LoyaltyCredit.eligibilityD2c === true;
+      if (!isEligible) {
+        // Remove any dynamic drawer injections immediately
+        const existing = document.querySelector('.loyalty-credit-drawer-injected');
+        if (existing) existing.remove();
+        return;
+      }
+
+      // 1. Instantiate any template elements on the page
+      const templates = document.querySelectorAll('.loyalty-credit-template');
+      templates.forEach(template => {
+        // Check if already instantiated as a sibling
+        let nextSibling = template.nextSibling;
+        let alreadyInstantiated = false;
+        while (nextSibling) {
+          if (nextSibling.classList && nextSibling.classList.contains('loyalty-credit-block')) {
+            alreadyInstantiated = true;
+            break;
+          }
+          nextSibling = nextSibling.nextSibling;
+        }
+
+        if (!alreadyInstantiated) {
+          const clone = template.content.cloneNode(true);
+          const block = clone.querySelector('.loyalty-credit-block');
+          if (block) {
+            if (block.classList.contains('loyalty-credit-product-block')) {
+              setupProductPageListeners(block);
+            } else {
+              debouncedCartUpdate(block);
+            }
+            template.parentNode.insertBefore(block, template.nextSibling);
+          }
+        }
+      });
+
+      // 2. Setup Live Observers for Product Page Blocks
+      const productBlocks = document.querySelectorAll('.loyalty-credit-product-block');
+      productBlocks.forEach(productBlock => {
+        setupProductPageListeners(productBlock);
+      });
+
+      // 3. Update existing static Cart Page blocks
+      const staticBlocks = document.querySelectorAll('.loyalty-credit-block:not(.loyalty-credit-product-block)');
+      staticBlocks.forEach(block => {
+        debouncedCartUpdate(block);
+      });
+
+      // 4. Setup listeners for Cart Page and Cart Drawer quantity inputs
+      setupCartPageListeners();
+
+      // 3. Handle injections inside Cart Drawers (strictly enforced by setting)
+      const showOnDrawer = window.LoyaltyCredit.showCartDrawerPoints === true;
+      if (!showOnDrawer) {
+        const existing = document.querySelector('.loyalty-credit-drawer-injected');
+        if (existing) existing.remove();
+        return;
+      }
+
+      const drawerContent = document.querySelector(SELECTORS);
+      if (drawerContent) {
+        const parent = drawerContent.parentElement;
+        let existing = parent.querySelector('.loyalty-credit-drawer-injected');
+        
+        if (!existing) {
+          if (!parent.querySelector('.loyalty-credit-block')) {
+            const div = document.createElement('div');
+            div.className = 'loyalty-credit-drawer-injected';
+            div.style = 'background-color: #FEFCE8; padding: 16px; border-radius: 8px; color: #333; margin: 15px; display: flex; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;';
+            div.innerHTML = `
+              <div style="background: #f1c40f; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
+                </svg>
+              </div>
+              <div>
+                <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;"></p>
+                <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by Loyalty Credit</p>
+              </div>
+            `;
+            drawerContent.parentNode.insertBefore(div, drawerContent.nextSibling);
+            debouncedCartUpdate(div);
+          }
+        } else {
+          debouncedCartUpdate(existing);
+        }
+      }
+    }
+
+    // Intercept XMLHttpRequest.prototype.open to capture URLs for XHR
+    const originalXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+      this._url = url;
+      return originalXHROpen.apply(this, [method, url, ...args]);
+    };
+
+    // Intercept XHR Sends
+    const originalXHRSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(...args) {
+      this.addEventListener('load', function() {
+        const url = this._url;
+        let urlString = '';
+        if (typeof url === 'string') {
+          urlString = url;
+        } else if (url && url.toString) {
+          urlString = url.toString();
+        }
+        if (urlString.includes('/cart/change') || 
+            urlString.includes('/cart/add') || 
+            urlString.includes('/cart/update') || 
+            urlString.includes('/cart/clear')) {
+          setTimeout(injectBlock, 300);
+        }
+      });
+      return originalXHRSend.apply(this, args);
+    };
+
+    // Intercept Fetch API calls
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch.apply(this, args);
+      const url = args[0];
+      let urlString = '';
+      if (typeof url === 'string') {
+        urlString = url;
+      } else if (url && typeof url === 'object' && url.url) {
+        urlString = url.url;
+      } else if (url && url.toString) {
+        urlString = url.toString();
+      }
+      if (urlString.includes('/cart/change') || 
+          urlString.includes('/cart/add') || 
+          urlString.includes('/cart/update') || 
+          urlString.includes('/cart/clear')) {
+        setTimeout(injectBlock, 300);
+      }
+      return response;
+    };
+
+    // Initialize listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      injectBlock();
+      const observer = new MutationObserver(() => {
+        injectBlock();
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+
+    // Dynamic self-cleaner: Delete this script element itself from the DOM tree
+    if (document.currentScript) {
+      document.currentScript.remove();
+    }
+  })();
+</script>

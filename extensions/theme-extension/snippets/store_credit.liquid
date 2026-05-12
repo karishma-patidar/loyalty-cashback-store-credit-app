@@ -1,0 +1,214 @@
+{% assign programs_metafield = shop.metafields.loyalty_cashback_app.programs.value %}
+{% if programs_metafield == blank %}
+  {% assign programs_metafield = shop.metafields.loyalty_cashback_app.programs %}
+{% endif %}
+
+{% assign active_program = null %}
+{% for prog in programs_metafield %}
+  {% if prog.status == 'Active' %}
+    {% assign active_program = prog %}
+    {% break %}
+  {% endif %}
+{% endfor %}
+
+{% assign is_valid_schedule = false %}
+{% if active_program %}
+  {% assign now_ts = 'now' | date: '%s' | plus: 0 %}
+
+  {% comment %} Start Date/Time Check {% endcomment %}
+  {% assign start_valid = true %}
+  {% if active_program.startDate != blank %}
+    {% assign start_time_str = active_program.startTime | default: '00:00' %}
+    {% assign start_combined = active_program.startDate | append: ' ' | append: start_time_str %}
+    {% assign start_ts = start_combined | date: '%s' | plus: 0 %}
+    {% if now_ts < start_ts %}
+      {% assign start_valid = false %}
+    {% endif %}
+  {% endif %}
+
+  {% comment %} End Date/Time Check (if enabled) {% endcomment %}
+  {% assign end_valid = true %}
+  {% if active_program.enableEndDate and active_program.endDate != blank %}
+    {% assign end_time_str = active_program.endTime | default: '23:59' %}
+    {% assign end_combined = active_program.endDate | append: ' ' | append: end_time_str %}
+    {% assign end_ts = end_combined | date: '%s' | plus: 0 %}
+    {% if now_ts > end_ts %}
+      {% assign end_valid = false %}
+    {% endif %}
+  {% endif %}
+
+  {% if start_valid and end_valid %}
+    {% assign is_valid_schedule = true %}
+  {% endif %}
+{% endif %}
+
+{% if active_program and is_valid_schedule and active_program.eligibility.d2c == true %}
+  {% assign credit_amount_cents = 0 %}
+
+  {% if active_program.programType == 'product' %}
+    {% if request.page_type == 'product' %}
+      {% comment %} Product Page: Single item calculations {% endcomment %}
+      {% assign base_price = product.selected_or_first_available_variant.price | default: product.price | default: 0 %}
+      {% if active_program.amountType == 'Percentage' %}
+        {% assign amount_num = active_program.amount | plus: 0 %}
+        {% assign calculated_cents = base_price | times: amount_num | divided_by: 100 %}
+
+        {% if active_program.maxAmount != blank and active_program.maxAmount != '0' and active_program.maxAmount != 0 %}
+          {% assign max_num = active_program.maxAmount | plus: 0 %}
+          {% assign max_cents = max_num | times: 100 %}
+          {% if calculated_cents > max_cents %}
+            {% assign credit_amount_cents = max_cents %}
+          {% else %}
+            {% assign credit_amount_cents = calculated_cents %}
+          {% endif %}
+        {% else %}
+          {% assign credit_amount_cents = calculated_cents %}
+        {% endif %}
+      {% else %}
+        {% assign amount_num = active_program.amount | plus: 0 %}
+        {% assign credit_amount_cents = amount_num | times: 100 %}
+      {% endif %}
+    {% else %}
+      {% comment %} Cart Page: Dynamic sum per item quantity for product-based programs {% endcomment %}
+      {% for item in cart.items %}
+        {% assign item_cashback_cents = 0 %}
+        {% if active_program.amountType == 'Percentage' %}
+          {% assign amount_num = active_program.amount | plus: 0 %}
+          {% assign calculated_cents = item.price | times: amount_num | divided_by: 100 %}
+
+          {% if active_program.maxAmount != blank
+            and active_program.maxAmount != '0'
+            and active_program.maxAmount != 0
+          %}
+            {% assign max_num = active_program.maxAmount | plus: 0 %}
+            {% assign max_cents = max_num | times: 100 %}
+            {% if calculated_cents > max_cents %}
+              {% assign item_cashback_cents = max_cents %}
+            {% else %}
+              {% assign item_cashback_cents = calculated_cents %}
+            {% endif %}
+          {% else %}
+            {% assign item_cashback_cents = calculated_cents %}
+          {% endif %}
+        {% else %}
+          {% assign amount_num = active_program.amount | plus: 0 %}
+          {% assign item_cashback_cents = amount_num | times: 100 %}
+        {% endif %}
+
+        {% assign total_item_cashback = item_cashback_cents | times: item.quantity %}
+        {% assign credit_amount_cents = credit_amount_cents | plus: total_item_cashback %}
+      {% endfor %}
+    {% endif %}
+
+  {% else %}
+    {% comment %} Cashback by Order {% endcomment %}
+    {% if active_program.amountType == 'Percentage' %}
+      {% if request.page_type == 'product' %}
+        {% assign base_price = product.selected_or_first_available_variant.price
+          | default: product.price
+          | default: 0
+        %}
+      {% else %}
+        {% assign base_price = cart.total_price | default: 0 %}
+      {% endif %}
+
+      {% assign amount_num = active_program.amount | plus: 0 %}
+      {% assign calculated_cents = base_price | times: amount_num | divided_by: 100 %}
+
+      {% if active_program.maxAmount != blank and active_program.maxAmount != '0' and active_program.maxAmount != 0 %}
+        {% assign max_num = active_program.maxAmount | plus: 0 %}
+        {% assign max_cents = max_num | times: 100 %}
+        {% if calculated_cents > max_cents %}
+          {% assign credit_amount_cents = max_cents %}
+        {% else %}
+          {% assign credit_amount_cents = calculated_cents %}
+        {% endif %}
+      {% else %}
+        {% assign credit_amount_cents = calculated_cents %}
+      {% endif %}
+    {% else %}
+      {% assign amount_num = active_program.amount | plus: 0 %}
+      {% assign credit_amount_cents = amount_num | times: 100 %}
+    {% endif %}
+  {% endif %}
+
+  {% assign formatted_credit = credit_amount_cents | money %}
+
+  {% if request.page_type == 'product' %}
+    {% assign raw_msg = active_program.msgProduct
+      | default: 'Receive {loyalty_credit_amount} store credit when purchasing each item.'
+    %}
+  {% else %}
+    {% assign raw_msg = active_program.msgCart
+      | default: 'You will get {loyalty_credit_amount} store credit after this purchase.'
+    %}
+  {% endif %}
+
+  {% assign final_msg = raw_msg | replace: '{loyalty_credit_amount}', formatted_credit %}
+
+  <template class="loyalty-credit-template">
+    <div
+      class="loyalty-credit-block{% if request.page_type == 'product' %} loyalty-credit-product-block{% endif %}"
+      data-page-type="{{ request.page_type }}"
+      data-product-price="{{ product.selected_or_first_available_variant.price | default: product.price | default: 0 }}"
+      data-amount="{{ active_program.amount }}"
+      data-amount-type="{{ active_program.amountType }}"
+      data-max-amount="{{ active_program.maxAmount }}"
+      data-msg-product="{{ active_program.msgProduct | escape }}"
+      style="background-color: #FEFCE8; padding: 16px; border-radius: 8px; color: #333; margin: 15px 0; display: flex; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;"
+    >
+      <div
+        class="loyalty-icon"
+        style="background: #f1c40f; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
+        </svg>
+      </div>
+      <div>
+        <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;">
+          {{ final_msg }}
+        </p>
+        <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by Loyalty Credit</p>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    (function () {
+      // Dynamic self-cleaner: If global App Embed is disabled, purge this template and its Shopify container wrapper from the DOM immediately
+      function purgeDormantTemplates() {
+        if (!document.getElementById('loyalty-credit-app-embed-marker')) {
+          const templates = document.querySelectorAll('.loyalty-credit-template');
+          templates.forEach(function (t) {
+            const parentBlock = t.closest(".shopify-block, [id^='shopify-block-']");
+            if (parentBlock) {
+              parentBlock.remove();
+            } else {
+              t.remove();
+            }
+          });
+          const blocks = document.querySelectorAll('.loyalty-credit-block');
+          blocks.forEach(function (b) {
+            const parentBlock = b.closest(".shopify-block, [id^='shopify-block-']");
+            if (parentBlock) {
+              parentBlock.remove();
+            } else {
+              b.remove();
+            }
+          });
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', purgeDormantTemplates);
+      } else {
+        purgeDormantTemplates();
+      }
+
+      // Dynamic self-cleaner: Delete this script element itself from the DOM tree
+      if (document.currentScript) {
+        document.currentScript.remove();
+      }
+    })();
+  </script>
+{% endif %}
