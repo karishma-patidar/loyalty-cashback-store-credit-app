@@ -1,11 +1,25 @@
+import dns from "node:dns";
+// Force Google DNS to resolve mongodb+srv:// SRV records
+// (bypasses local/ISP DNS that may block SRV queries)
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 import "@shopify/shopify-app-react-router/adapters/node";
 import {
   ApiVersion,
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
-import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
-import prisma from "./db.server";
+import { MongoDBSessionStorage } from "@shopify/shopify-app-session-storage-mongodb";
+
+const mongoSessionStorage = new MongoDBSessionStorage(
+  new URL(process.env.MONGODB_URI),
+);
+
+mongoSessionStorage.ready.then(() => {
+  console.log("✅ MongoDB session storage connected successfully");
+}).catch((err) => {
+  console.error("❌ MongoDB session storage connection failed:", err);
+});
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -14,7 +28,7 @@ const shopify = shopifyApp({
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
-  sessionStorage: new PrismaSessionStorage(prisma),
+  sessionStorage: mongoSessionStorage,
   distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,
@@ -22,7 +36,7 @@ const shopify = shopifyApp({
 
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
-    : {})
+    : {}),
 });
 
 export default shopify;
