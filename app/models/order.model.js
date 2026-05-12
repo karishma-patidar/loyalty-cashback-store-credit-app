@@ -1,5 +1,5 @@
-const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const SALT_ROUNDS = 12;
 
@@ -175,9 +175,10 @@ OrderSchema.index({ shop: 1, createdAt: -1 });
 OrderSchema.index({ shop: 1, customerId: 1 });
 
 // ─────────────────────────────────────────────
-// Export both models
+// Safe ESM HMR Export Pattern
 // ─────────────────────────────────────────────
-const User = mongoose.model("User", UserSchema);
-const Order = mongoose.model("Order", OrderSchema);
+const User = mongoose.models.User || mongoose.model("User", UserSchema);
+const Order = mongoose.models.Order || mongoose.model("Order", OrderSchema);
 
-module.exports = { User, Order };
+export { User, Order };
+export default { User, Order };

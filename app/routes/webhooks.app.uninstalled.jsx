@@ -1,14 +1,23 @@
 import { authenticate } from "../shopify.server";
-import db from "../db.server";
+import connectDB from "../db.server";
+import mongoose from "mongoose";
 
 export const action = async ({ request }) => {
+  await connectDB();
   const { shop, session, topic } = await authenticate.webhook(request);
 
-  console.log(`Received ${topic} webhook for ${shop}`); // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // If this webhook already ran, the session may have been deleted previously.
+  console.log(`Received ${topic} webhook for ${shop}`);
 
   if (session) {
-    await db.session.deleteMany({ where: { shop } });
+    try {
+      const dbConnection = mongoose.connection.db;
+      if (dbConnection) {
+        await dbConnection.collection("shopify_sessions").deleteMany({ shop });
+        console.log(`✅ Successfully deleted sessions for shop in uninstalled hook: ${shop}`);
+      }
+    } catch (err) {
+      console.error(`❌ Error deleting sessions in uninstalled hook for ${shop}:`, err.message);
+    }
   }
 
   return new Response();

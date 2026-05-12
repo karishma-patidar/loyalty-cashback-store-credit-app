@@ -1,5 +1,5 @@
-const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const SALT_ROUNDS = 12;
 
@@ -46,7 +46,6 @@ const UserSchema = new mongoose.Schema(
   {
     timestamps: true,
     toJSON: {
-      // Remove password and __v from JSON output
       transform(_doc, ret) {
         delete ret.password;
         delete ret.__v;
@@ -74,4 +73,7 @@ UserSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-module.exports = mongoose.model("User", UserSchema);
+// Safe HMR export pattern for Mongoose models
+const User = mongoose.models.User || mongoose.model("User", UserSchema);
+export default User;
+export { User };

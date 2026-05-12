@@ -1,16 +1,28 @@
 import { ActionFunctionArgs } from 'react-router';
-import db from '../db.server';
+import connectDB from '../db.server';
+import { Order } from '../models/order.model';
+import { CustomerOrders } from '../models/CustomerOrders.model';
+import mongoose from 'mongoose';
 import { authenticate } from '../shopify.server';
 import {
   getShopPrograms,
   addStoreCredit,
   calculateCashbackAmount,
   calculateExpirationDate,
+  ProgramSettings,
 } from '../services/storeCredit.server';
+
+interface WebhookProgramSettings extends ProgramSettings {
+  notifyEmail?: boolean;
+}
 
 export const action = async ({
   request,
 }: ActionFunctionArgs) => {
+  console.log("📥 [Webhook Router] Received incoming request:", request.method, request.url);
+  console.log("📥 Headers:", JSON.stringify(Object.fromEntries(request.headers.entries()), null, 2));
+
+  await connectDB();
   const clonedRequest = request.clone();
 
   const {
@@ -23,9 +35,16 @@ export const action = async ({
   switch (topic) {
     case 'APP_UNINSTALLED':
       if (session) {
-        await db.session.deleteMany({
-          where: { shop },
-        });
+        try {
+          const dbConnection = mongoose.connection.db;
+          if (dbConnection) {
+            await dbConnection.collection("shopify_sessions").deleteMany({ shop });
+            console.log(`✅ Successfully deleted sessions for shop: ${shop}`);
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          console.error(`❌ Error deleting sessions on uninstall for ${shop}:`, errorMessage);
+        }
       }
       break;
 
@@ -68,50 +87,56 @@ export const action = async ({
       const customerId = `gid://shopify/Customer/${numericCustomerId}`;
       console.log('✅ Customer GID:', customerId);
 
-      if (!admin) {
-        console.log('❌ No admin client found');
-        break;
-      }
+      let program: WebhookProgramSettings = {
+        id: "default",
+        name: "Standard Cashback",
+        programType: "order",
+        amount: "10",
+        amountType: "Percentage",
+        status: "Active",
+        notifyEmail: false
+      };
+      
+      let isAppActive = true;
 
-      // ✅ Fetch global app_active status
-      const appActiveQuery = `#graphql
-        query GetAppActive {
-          shop {
-            metafield(namespace: "loyalty_cashback_app", key: "app_active") {
-              value
+      if (admin) {
+        // ✅ Fetch global app_active status
+        const appActiveQuery = `#graphql
+          query GetAppActive {
+            shop {
+              metafield(namespace: "loyalty_cashback_app", key: "app_active") {
+                value
+              }
             }
           }
+        `;
+        try {
+          const appActiveRes = await admin.graphql(appActiveQuery);
+          const appActiveData = await appActiveRes.json();
+          isAppActive = appActiveData?.data?.shop?.metafield?.value !== "false";
+        } catch (err) {
+          console.error("Error fetching app_active status:", err);
         }
-      `;
-      let isAppActive = true;
-      try {
-        const appActiveRes = await admin.graphql(appActiveQuery);
-        const appActiveData = await appActiveRes.json();
-        isAppActive = appActiveData?.data?.shop?.metafield?.value !== "false";
-      } catch (err) {
-        console.error("Error fetching app_active status:", err);
-      }
 
-      if (!isAppActive) {
-        console.log('[-] Aborted: App is currently set to INACTIVE in the dashboard.');
-        break;
-      }
+        if (!isAppActive) {
+          console.log('[-] Aborted: App is currently set to INACTIVE in the dashboard.');
+          break;
+        }
 
-      // ✅ Fetch configured loyalty programs
-      const programs = await getShopPrograms(admin);
+        // ✅ Fetch configured loyalty programs
+        const programs = await getShopPrograms(admin);
+        if (programs && programs.length > 0) {
+          program = programs[0];
+          console.log('[+] Selected Program Settings:', JSON.stringify(program));
+        }
 
-      if (!programs || programs.length === 0) {
-        console.log('[-] Aborted: No loyalty/cashback programs configured.');
-        break;
-      }
-
-      const program = programs[0];
-      console.log('[+] Selected Program Settings:', JSON.stringify(program));
-
-      // Check Status
-      if (program.status !== "Active" && program.status !== "true" && program.status !== true) {
-        console.log(`[-] Aborted: Program is not Active (Status: ${program.status})`);
-        break;
+        // Check Status
+        if (program.status !== "Active" && program.status !== "true" && program.status !== true) {
+          console.log(`[-] Aborted: Program is not Active (Status: ${program.status})`);
+          break;
+        }
+      } else {
+        console.log('⚠️ No Shopify admin API client found. Falling back to default settings for DB storage.');
       }
 
       // ✅ Calculate store credit reward amount
@@ -131,36 +156,72 @@ export const action = async ({
       const currencyCode = orderPayload?.currency || 'USD';
       console.log('✅ Dynamic Currency:', currencyCode);
 
-      // ✅ Add store credit to paid order customer
-      await addStoreCredit(
-        admin,
-        customerId,
-        cashbackAmount,
-        currencyCode,
-        expiresAt
-      );
+      // ✅ Add store credit to paid order customer (only if admin client is available)
+      if (admin) {
+        await addStoreCredit(
+          admin,
+          customerId,
+          cashbackAmount,
+          currencyCode,
+          expiresAt
+        );
+        console.log("✅ Successfully awarded store credit via Shopify API");
+      } else {
+        console.log("⚠️ Skipped Shopify store credit award: No admin API client available (Development/Mock Mode).");
+      }
 
       // ✅ Save transaction to the database for the Transactions list
       try {
         const customerName = `${orderPayload?.customer?.first_name || ""} ${orderPayload?.customer?.last_name || ""}`.trim() || "Anonymous Customer";
         
-        await db.transaction.create({
-          data: {
-            shop,
-            orderId: String(orderPayload?.id || ""),
-            orderName: String(orderPayload?.name || ""),
-            customerId,
-            customerName,
-            amount: cashbackAmount,
-            currency: currencyCode,
-            status: orderPayload?.financial_status === "paid" ? "Completed" : "Pending",
-            emailStatus: program.notifyEmail ? "Sent" : "Not Sent",
-            type: program.programType === "product" ? "Custom Program" : "Cashback",
-          }
+        await Order.create({
+          shop,
+          orderId: String(orderPayload?.id || ""),
+          orderName: String(orderPayload?.name || ""),
+          customerId,
+          customerName,
+          customerEmail: orderPayload?.customer?.email || null,
+          orderTotal: parseFloat(orderPayload?.current_total_price || 0),
+          cashbackAmount: cashbackAmount,
+          currency: currencyCode,
+          financialStatus: orderPayload?.financial_status === "paid" ? "PAID" : "PENDING",
+          cashbackStatus: orderPayload?.financial_status === "paid" ? "Completed" : "Pending",
+          emailStatus: program.notifyEmail ? "Sent" : "Not Sent",
+          programType: program.programType === "product" ? "Custom Program" : "Cashback",
+          programId: program.id || null,
         });
-        console.log("🎉 Webhook saved transaction to database successfully!");
+        console.log("🎉 Webhook saved flat transaction to database successfully!");
+
+        // ✅ Save to CustomerOrders collection (grouped nested array of orders)
+        await CustomerOrders.findOneAndUpdate(
+          { shop, customerId },
+          {
+            $set: {
+              customerName,
+              customerEmail: orderPayload?.customer?.email || null,
+            },
+            $push: {
+              orders: {
+                orderId: String(orderPayload?.id || ""),
+                orderName: String(orderPayload?.name || ""),
+                orderTotal: parseFloat(orderPayload?.current_total_price || 0),
+                cashbackAmount: cashbackAmount,
+                currency: currencyCode,
+                financialStatus: orderPayload?.financial_status === "paid" ? "PAID" : "PENDING",
+                cashbackStatus: orderPayload?.financial_status === "paid" ? "Completed" : "Pending",
+                emailStatus: program.notifyEmail ? "Sent" : "Not Sent",
+                programType: program.programType === "product" ? "Custom Program" : "Cashback",
+                programId: program.id || null,
+                issuedAt: new Date(),
+              }
+            }
+          },
+          { upsert: true, new: true }
+        );
+        console.log("🎉 Webhook saved customer-centric order history successfully!");
       } catch (dbErr) {
-        console.error("❌ Error saving transaction to database in webhook:", dbErr);
+        const errorMessage = dbErr instanceof Error ? dbErr.message : String(dbErr);
+        console.error("❌ Error saving transaction/order to database in webhook:", errorMessage);
       }
 
       break;
