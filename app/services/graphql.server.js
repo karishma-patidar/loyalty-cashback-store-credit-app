@@ -46,6 +46,33 @@ export async function getShopPrograms(admin) {
  * @returns {Promise<{ success: boolean }>}
  */
 export async function setShopPrograms(admin, shopId, programs) {
+  try {
+    const defMutation = `
+      mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
+        metafieldDefinitionCreate(definition: $definition) {
+          createdDefinition {
+            id
+            name
+          }
+        }
+      }
+    `;
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty Cashback Programs",
+          namespace: "loyalty_cashback_app",
+          key: "programs",
+          type: "json",
+          description: "Stores loyalty program configurations for Loyalty Store Credit app",
+          ownerType: "SHOP"
+        }
+      }
+    });
+  } catch (err) {
+    // Ignore if already created
+  }
+
   const mutation = `
     mutation SetPrograms($metafields: [MetafieldsSetInput!]!) {
       metafieldsSet(metafields: $metafields) {

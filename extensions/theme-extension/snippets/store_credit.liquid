@@ -42,10 +42,24 @@
   {% endif %}
 {% endif %}
 
-{% if active_program and is_valid_schedule and active_program.eligibility.d2c == true %}
+{% assign show_widget = true %}
+{% if active_program %}
+  {% if active_program.eligibility.d2c != true or is_valid_schedule == false %}
+    {% assign show_widget = false %}
+  {% endif %}
+{% endif %}
+
+{% assign is_preview = false %}
+{% if active_program == blank %}
+  {% assign is_preview = true %}
+{% endif %}
+
+{% if show_widget %}
   {% assign credit_amount_cents = 0 %}
 
-  {% if active_program.programType == 'product' %}
+  {% if active_program == blank %}
+    {% assign credit_amount_cents = 1000 %}
+  {% elsif active_program.programType == 'product' %}
     {% if request.page_type == 'product' %}
       {% comment %} Product Page: Single item calculations {% endcomment %}
       {% assign base_price = product.selected_or_first_available_variant.price | default: product.price | default: 0 %}
@@ -146,69 +160,33 @@
 
   {% assign final_msg = raw_msg | replace: '{loyalty_credit_amount}', formatted_credit %}
 
-  <template class="loyalty-credit-template">
+  {% assign default_msg_prod = 'Receive {loyalty_credit_amount} store credit when purchasing each item.' %}
+  {% assign escaped_msg_prod = active_program.msgProduct | default: default_msg_prod | escape %}
+
+  <div
+    class="loyalty-credit-block{% if request.page_type == 'product' %} loyalty-credit-product-block{% endif %}"
+    data-page-type="{{ request.page_type }}"
+    data-program-type="{{ active_program.programType | default: 'order' }}"
+    data-product-price="{{ product.selected_or_first_available_variant.price | default: product.price | default: 0 }}"
+    data-amount="{{ active_program.amount | default: 10 }}"
+    data-amount-type="{{ active_program.amountType | default: 'Fixed amount' }}"
+    data-max-amount="{{ active_program.maxAmount | default: 0 }}"
+    data-msg-product="{{ escaped_msg_prod }}"
+    style="background-color: #FEFCE8; padding: 16px; border-radius: 8px; color: #333; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;"
+  >
     <div
-      class="loyalty-credit-block{% if request.page_type == 'product' %} loyalty-credit-product-block{% endif %}"
-      data-page-type="{{ request.page_type }}"
-      data-product-price="{{ product.selected_or_first_available_variant.price | default: product.price | default: 0 }}"
-      data-amount="{{ active_program.amount }}"
-      data-amount-type="{{ active_program.amountType }}"
-      data-max-amount="{{ active_program.maxAmount }}"
-      data-msg-product="{{ active_program.msgProduct | escape }}"
-      style="background-color: #FEFCE8; padding: 16px; border-radius: 8px; color: #333; margin: 15px 0; display: flex; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;"
+      class="loyalty-icon"
+      style="background: #f1c40f; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
     >
-      <div
-        class="loyalty-icon"
-        style="background: #f1c40f; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
-      >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
-        </svg>
-      </div>
-      <div>
-        <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;">
-          {{ final_msg }}
-        </p>
-        <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by Loyalty Credit</p>
-      </div>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
+      </svg>
     </div>
-  </template>
-
-  <script>
-    (function () {
-      // Dynamic self-cleaner: If global App Embed is disabled, purge this template and its Shopify container wrapper from the DOM immediately
-      function purgeDormantTemplates() {
-        if (!document.getElementById('loyalty-credit-app-embed-marker')) {
-          const templates = document.querySelectorAll('.loyalty-credit-template');
-          templates.forEach(function (t) {
-            const parentBlock = t.closest(".shopify-block, [id^='shopify-block-']");
-            if (parentBlock) {
-              parentBlock.remove();
-            } else {
-              t.remove();
-            }
-          });
-          const blocks = document.querySelectorAll('.loyalty-credit-block');
-          blocks.forEach(function (b) {
-            const parentBlock = b.closest(".shopify-block, [id^='shopify-block-']");
-            if (parentBlock) {
-              parentBlock.remove();
-            } else {
-              b.remove();
-            }
-          });
-        }
-      }
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', purgeDormantTemplates);
-      } else {
-        purgeDormantTemplates();
-      }
-
-      // Dynamic self-cleaner: Delete this script element itself from the DOM tree
-      if (document.currentScript) {
-        document.currentScript.remove();
-      }
-    })();
-  </script>
+    <div>
+      <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;">
+        {{ final_msg }}
+      </p>
+      <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by Loyalty Credit</p>
+    </div>
+  </div>
 {% endif %}

@@ -103,6 +103,7 @@
       const amountStr = block.getAttribute('data-amount');
       const amountType = block.getAttribute('data-amount-type');
       const maxAmountStr = block.getAttribute('data-max-amount');
+      const programType = block.getAttribute('data-program-type');
       
       let rawMsg = "Receive {loyalty_credit_amount} store credit when purchasing each item.";
       try {
@@ -133,7 +134,11 @@
         cashback_cents = amount * 100;
       }
 
-      const total_cashback_cents = cashback_cents * quantity;
+      let total_cashback_cents = cashback_cents;
+      if (programType === 'product') {
+        total_cashback_cents = cashback_cents * quantity;
+      }
+      
       const formatted = formatMoney(total_cashback_cents);
       const finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<strong>${formatted}</strong>`);
 
@@ -350,28 +355,8 @@
       // Real-time editor toggle support: clean up and stop if embed is disabled
       const marker = document.getElementById('loyalty-credit-app-embed-marker');
       if (!marker) {
-        const instantiated = document.querySelectorAll('.loyalty-credit-block');
-        instantiated.forEach(block => {
-          const parentBlock = block.closest(".shopify-block, [id^='shopify-block-']");
-          if (parentBlock) {
-            parentBlock.remove();
-          } else {
-            block.remove();
-          }
-        });
-        
-        const templates = document.querySelectorAll('.loyalty-credit-template');
-        templates.forEach(t => {
-          const parentBlock = t.closest(".shopify-block, [id^='shopify-block-']");
-          if (parentBlock) {
-            parentBlock.remove();
-          } else {
-            t.remove();
-          }
-        });
-
         const existing = document.querySelector('.loyalty-credit-drawer-injected');
-        if (existing) existing.remove();
+        if (existing) existing.style.display = 'none';
         return;
       }
 

@@ -10,10 +10,46 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getShopPrograms, setShopPrograms, deleteShopPrograms } from "../services/graphql.server";
+import connectMongoDB, { getShopModel } from "../db.mongodb.server";
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const { shopId, programs } = await getShopPrograms(admin);
+
+  // Connect to MongoDB to calculate exact issued store credit per program type
+  await connectMongoDB();
+  let currency = "INR";
+  try {
+    const ShopModel = getShopModel(session.shop);
+    const docs = await ShopModel.find({});
+    
+    // Process each program to assign its dynamic issued amount
+    for (const prog of programs) {
+      let totalIssued = 0;
+      const isCustom = prog.programType === "product";
+
+      for (const doc of docs) {
+        if (doc.events && Array.isArray(doc.events)) {
+          for (const ev of doc.events) {
+            if (ev.status === "Completed") {
+              if (ev.currency) currency = ev.currency;
+              const evIsCustom = ev.type === "Custom Program";
+              if (isCustom && evIsCustom) {
+                totalIssued += Number(ev.amount || 0);
+              } else if (!isCustom && !evIsCustom) {
+                totalIssued += Number(ev.amount || 0);
+              }
+            }
+          }
+        }
+      }
+
+      prog.issued = `${totalIssued.toFixed(2)} ${currency}`;
+    }
+  } catch (err) {
+    console.error("❌ Error calculating program issued amounts:", err);
+  }
+
   return { programs, shopId };
 };
 

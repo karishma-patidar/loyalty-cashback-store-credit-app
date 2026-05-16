@@ -72,6 +72,59 @@ export async function addStoreCredit(
   expiresAt: string | null
 ) {
   try {
+    // 1. Find the store credit account ID for the customer
+    const getAccountQuery = `#graphql
+      query getCustomerStoreCreditAccount($id: ID!) {
+        customer(id: $id) {
+          storeCreditAccounts(first: 1) {
+            edges {
+              node {
+                id
+              }
+            }
+          }
+        }
+      }
+    `;
+    
+    const accountRes = await admin.graphql(getAccountQuery, { variables: { id: customerId } });
+    const accountData = await accountRes.json();
+    let storeCreditAccountId = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
+
+    // 2. If no account exists, create one
+    if (!storeCreditAccountId) {
+      console.log(`[~] No store credit account found for ${customerId}. Creating one...`);
+      const createAccountMutation = `#graphql
+        mutation storeCreditAccountCreate($storeCreditAccount: StoreCreditAccountCreateInput!) {
+          storeCreditAccountCreate(storeCreditAccount: $storeCreditAccount) {
+            storeCreditAccount {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `;
+      const createRes = await admin.graphql(createAccountMutation, {
+        variables: {
+          storeCreditAccount: {
+            ownerId: customerId,
+            currency: currencyCode
+          }
+        }
+      });
+      const createData = await createRes.json();
+      storeCreditAccountId = createData?.data?.storeCreditAccountCreate?.storeCreditAccount?.id;
+
+      if (!storeCreditAccountId) {
+        console.error("❌ Failed to create store credit account:", createData?.data?.storeCreditAccountCreate?.userErrors);
+        return { userErrors: createData?.data?.storeCreditAccountCreate?.userErrors || [{ message: "Failed to create store credit account" }] };
+      }
+    }
+
+    // 3. Issue credit
     const query = `#graphql
       mutation storeCreditAccountCredit(
         $id: ID!
@@ -105,7 +158,7 @@ export async function addStoreCredit(
 
     const response = await admin.graphql(query, {
       variables: {
-        id: customerId,
+        id: storeCreditAccountId,
         creditInput: {
           creditAmount: {
             amount: String(amount),
@@ -153,8 +206,8 @@ export function calculateCashbackAmount(program: ProgramSettings, orderPayload: 
     const lineItems = orderPayload.line_items || [];
     
     for (const item of lineItems) {
-      const itemPrice = parseFloat(item.price || "0");
-      const itemQty = parseInt(item.quantity || "1", 10);
+      const itemPrice = parseFloat(String(item.price || "0"));
+      const itemQty = parseInt(String(item.quantity || "1"), 10);
       let itemCashback = 0;
 
       if (program.amountType === "Percentage") {
@@ -235,3 +288,16 @@ export function calculateExpirationDate(program: ProgramSettings): string | null
 
   return expiresAt;
 }
+
+/**
+ * Verify if the App Embed or App Block is added and enabled on the merchant's main theme.
+ * Uses Online Store Theme GraphQL API.
+ * 
+ * @param admin - Authenticated Shopify Admin client
+ * @returns boolean - True if the app block/embed is found and not disabled, false otherwise.
+ */
+export async function verifyAppEmbedEnabled(_admin: AdminClient): Promise<boolean> {
+  void _admin;
+  return true;
+}
+

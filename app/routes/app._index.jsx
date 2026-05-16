@@ -1,11 +1,57 @@
 import { useState } from "react";
 import { Link, useLoaderData, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
+import { syncMongoStoreSession } from "../db.mongodb.server";
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
-  
+  const { admin, session } = await authenticate.admin(request);
+  await syncMongoStoreSession(session);
+
+  // Ensure Metafield Definitions exist under Shopify Admin Settings -> Custom Data
+  try {
+    const defMutation = `#graphql
+      mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
+        metafieldDefinitionCreate(definition: $definition) {
+          createdDefinition {
+            id
+            name
+          }
+        }
+      }
+    `;
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty Cashback Programs",
+          namespace: "loyalty_cashback_app",
+          key: "programs",
+          type: "json",
+          description:
+            "Stores loyalty program configurations for Loyalty Store Credit app",
+          ownerType: "SHOP",
+        },
+      },
+    });
+
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty App Active Status",
+          namespace: "loyalty_cashback_app",
+          key: "app_active",
+          type: "single_line_text_field",
+          description:
+            "Stores active/inactive toggle status for Loyalty Store Credit app",
+          ownerType: "SHOP",
+        },
+      },
+    });
+  } catch (err) {
+    // Ignore if definitions already exist
+  }
+
   // Fetch app active status from Shopify metafields
   const query = `#graphql
     query GetAppActive {
@@ -17,11 +63,11 @@ export const loader = async ({ request }) => {
       }
     }
   `;
-  
+
   const response = await admin.graphql(query);
   const data = await response.json();
   const value = data?.data?.shop?.metafield?.value;
-  
+
   // Default to true if not set yet
   const isActive = value !== "false";
   const shopId = data?.data?.shop?.id;
@@ -53,9 +99,9 @@ export const action = async ({ request }) => {
           key: "app_active",
           type: "single_line_text_field",
           value: String(isActive),
-        }
-      ]
-    }
+        },
+      ],
+    },
   });
 
   return { success: true, isActive };
@@ -64,7 +110,9 @@ export const action = async ({ request }) => {
 export default function Index() {
   const loaderData = useLoaderData();
   const fetcher = useFetcher();
+  const shopify = useAppBridge();
   const [openStep, setOpenStep] = useState(1);
+  const [mongoLoading, setMongoLoading] = useState(false);
 
   const isActive = fetcher.formData
     ? fetcher.formData.get("isActive") === "true"
@@ -75,8 +123,31 @@ export default function Index() {
   const handleToggleActive = () => {
     fetcher.submit(
       { isActive: !isActive, shopId },
-      { method: "POST", encType: "application/json" }
+      { method: "POST", encType: "application/json" },
     );
+  };
+
+  const testMongoDB = async () => {
+    setMongoLoading(true);
+    try {
+      const response = await fetch("/api/hello");
+      const data = await response.json();
+      if (response.ok && data.database?.connected) {
+        shopify.toast.show(
+          `Database Connected! Database: ${data.database.name}`,
+        );
+      } else {
+        shopify.toast.show(data.message || "Failed to connect to MongoDB", {
+          isError: true,
+        });
+      }
+    } catch (err) {
+      shopify.toast.show(err.message || "Error testing MongoDB", {
+        isError: true,
+      });
+    } finally {
+      setMongoLoading(false);
+    }
   };
 
   const steps = [

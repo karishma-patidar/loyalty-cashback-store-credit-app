@@ -16,7 +16,7 @@ export const PromotionWidgets = () => {
           <s-box border="base" borderRadius="base">
             <s-clickable
               padding="small-100"
-              onClick={() => navigate("/app/promotion_widgets/widget_settings")}
+              onClick={() => navigate("/app/widget_settings")}
               accessibilityLabel="Manage widget settings"
             >
               <s-grid
