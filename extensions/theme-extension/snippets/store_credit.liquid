@@ -163,6 +163,11 @@
   {% assign default_msg_prod = 'Receive {loyalty_credit_amount} store credit when purchasing each item.' %}
   {% assign escaped_msg_prod = active_program.msgProduct | default: default_msg_prod | escape %}
 
+  {% assign bg_color = shop.metafields.loyalty_cashback_app.widget_bg_color.value | default: shop.metafields.loyalty_cashback_app.widget_bg_color | default: '#FEFCE8' %}
+  {% assign text_color = shop.metafields.loyalty_cashback_app.widget_text_color.value | default: shop.metafields.loyalty_cashback_app.widget_text_color | default: '#333333' %}
+  {% assign credit_icon = shop.metafields.loyalty_cashback_app.widget_credit_icon.value | default: shop.metafields.loyalty_cashback_app.widget_credit_icon | default: 'icon2' %}
+  {% assign hide_watermark = shop.metafields.loyalty_cashback_app.hide_watermark.value | default: shop.metafields.loyalty_cashback_app.hide_watermark %}
+
   <div
     class="loyalty-credit-block{% if request.page_type == 'product' %} loyalty-credit-product-block{% endif %}"
     data-page-type="{{ request.page_type }}"
@@ -172,21 +177,44 @@
     data-amount-type="{{ active_program.amountType | default: 'Fixed amount' }}"
     data-max-amount="{{ active_program.maxAmount | default: 0 }}"
     data-msg-product="{{ escaped_msg_prod }}"
-    style="background-color: #FEFCE8; padding: 16px; border-radius: 8px; color: #333; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;"
+    style="background-color: {{ bg_color }}; padding: 16px; border-radius: 8px; color: {{ text_color }}; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;"
   >
     <div
       class="loyalty-icon"
-      style="background: #f1c40f; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
+      style="display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px;"
     >
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
-      </svg>
+      {% if credit_icon == 'icon1' %}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+          <path d="M12 7l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4-2.9-2.8 4-.6L12 7z" fill="#FFF" />
+        </svg>
+      {% elsif credit_icon == 'icon3' %}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+          <circle cx="12" cy="12" r="6" stroke="#FFF" stroke-width="2" fill="none" />
+        </svg>
+      {% elsif credit_icon == 'icon4' %}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="6" width="16" height="12" rx="2" stroke="#F59E0B" stroke-width="2.5" fill="none" />
+          <circle cx="16" cy="12" r="2" fill="#F59E0B" />
+        </svg>
+      {% elsif credit_icon contains 'http' or credit_icon contains 'data:image' %}
+        <img src="{{ credit_icon }}" alt="Loyalty Icon" style="width: 32px; height: 32px; object-fit: contain;" />
+      {% else %}
+        {% comment %} Default is icon2 (dollar coin) {% endcomment %}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+          <text x="12" y="16.5" fill="#FFF" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">$</text>
+        </svg>
+      {% endif %}
     </div>
     <div>
       <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;">
         {{ final_msg }}
       </p>
-      <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by Loyalty Credit</p>
+      {% if hide_watermark != 'true' and hide_watermark != true %}
+        <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by <a href="https://getkoin.io" target="_blank" style="color: inherit; text-decoration: underline;">Getkoin.io</a></p>
+      {% endif %}
     </div>
   </div>
 {% endif %}

@@ -69,7 +69,8 @@ export async function addStoreCredit(
   customerId: string,
   amount: number,
   currencyCode: string,
-  expiresAt: string | null
+  expiresAt: string | null,
+  notifyCustomer: boolean = false
 ) {
   try {
     // 1. Find the store credit account ID for the customer
@@ -156,21 +157,64 @@ export async function addStoreCredit(
       }
     `;
 
-    const response = await admin.graphql(query, {
-      variables: {
-        id: storeCreditAccountId,
-        creditInput: {
-          creditAmount: {
-            amount: String(amount),
-            currencyCode,
-          },
-          ...(expiresAt ? { expiresAt } : {}),
-        },
-      },
-    });
+    let result;
+    let emailUnsupported = false;
 
-    const data = await response.json();
-    const result = data?.data?.storeCreditAccountCredit;
+    try {
+      const response = await admin.graphql(query, {
+        variables: {
+          id: storeCreditAccountId,
+          creditInput: {
+            creditAmount: {
+              amount: String(amount),
+              currencyCode,
+            },
+            notify: notifyCustomer,
+            ...(expiresAt ? { expiresAt } : {}),
+          },
+        },
+      });
+
+      const data = await response.json();
+      result = data?.data?.storeCreditAccountCredit;
+    } catch (graphqlError: any) {
+      const errMsg = String(graphqlError.message || graphqlError);
+      if (
+        errMsg.includes("notify") &&
+        (errMsg.includes("Field is not defined") || errMsg.includes("invalid value") || errMsg.includes("GraphqlQueryError"))
+      ) {
+        console.warn("[⚠️] Shopify API version does not support 'notify' field. Retrying credit addition without notify...");
+        emailUnsupported = true;
+
+        try {
+          const responseRetry = await admin.graphql(query, {
+            variables: {
+              id: storeCreditAccountId,
+              creditInput: {
+                creditAmount: {
+                  amount: String(amount),
+                  currencyCode,
+                },
+                ...(expiresAt ? { expiresAt } : {}),
+              },
+            },
+          });
+
+          const dataRetry = await responseRetry.json();
+          result = dataRetry?.data?.storeCreditAccountCredit;
+        } catch (retryError) {
+          console.error("❌ Retry Store Credit Error:", retryError);
+          throw retryError;
+        }
+      } else {
+        console.error("❌ Store Credit GraphQL Error:", graphqlError);
+        throw graphqlError;
+      }
+    }
+
+    if (result) {
+      result.emailUnsupported = emailUnsupported;
+    }
 
     console.log(
       "✅ Store Credit Response:",

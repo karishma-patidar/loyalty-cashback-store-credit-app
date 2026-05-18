@@ -88,6 +88,7 @@ export async function loader({ request }) {
             currency: ev.currency,
             status: ev.status,
             emailStatus: ev.emailStatus,
+            emailFailReason: ev.emailFailReason || "",
             type: ev.type,
           });
         }
@@ -603,6 +604,7 @@ export default function Transactions() {
       currency,
       status,
       emailStatus,
+      emailFailReason,
     }) => {
       const cleanCustomerId = customerId ? customerId.split("/").pop() : "";
       const orderUrl = `https://admin.shopify.com/store/${shopSubdomain}/orders/${orderId}`;
@@ -645,7 +647,7 @@ export default function Transactions() {
             </s-badge>
           </s-table-cell>
           <s-table-cell>
-            <s-badge tone={emailStatus === "Sent" ? "success" : "info"}>
+            <s-badge tone={emailStatus === "Sent" ? "success" : emailStatus === "Failed" ? "critical" : "info"}>
               {emailStatus}
             </s-badge>
           </s-table-cell>
@@ -665,6 +667,7 @@ export default function Transactions() {
                   currency,
                   status,
                   emailStatus,
+                  emailFailReason,
                   orderUrl,
                   customerUrl,
                 });
@@ -1270,13 +1273,23 @@ export default function Transactions() {
                         tone={
                           selectedTransaction.emailStatus === "Sent"
                             ? "success"
-                            : "info"
+                            : selectedTransaction.emailStatus === "Failed"
+                              ? "critical"
+                              : "info"
                         }
                       >
                         {selectedTransaction.emailStatus}
                       </s-badge>
                     ),
                   },
+                  ...(selectedTransaction.emailFailReason ? [{
+                    term: "Notification Issue Reason",
+                    description: (
+                      <Text variant="bodyMd" tone="critical">
+                        {selectedTransaction.emailFailReason}
+                      </Text>
+                    )
+                  }] : []),
                 ]}
               />
             </BlockStack>

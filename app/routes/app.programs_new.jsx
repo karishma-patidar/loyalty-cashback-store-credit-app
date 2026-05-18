@@ -19,7 +19,7 @@ import { ChannelEligibilitySettings } from "../components/Program_page/ChannelEl
 import { Page } from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const editId = url.searchParams.get("id");
 
@@ -30,7 +30,54 @@ export const loader = async ({ request }) => {
     program = programs.find((p) => p.id === editId);
   }
 
-  return { program };
+  // Get Styling settings from metafields to style the preview section dynamically
+  const stylingQuery = `#graphql
+    query GetStylingMetafields {
+      shop {
+        bg_color: metafield(namespace: "loyalty_cashback_app", key: "widget_bg_color") {
+          value
+        }
+        text_color: metafield(namespace: "loyalty_cashback_app", key: "widget_text_color") {
+          value
+        }
+        credit_icon: metafield(namespace: "loyalty_cashback_app", key: "widget_credit_icon") {
+          value
+        }
+        hide_watermark: metafield(namespace: "loyalty_cashback_app", key: "hide_watermark") {
+          value
+        }
+      }
+    }
+  `;
+
+  let bgColor = "#cfb84a";
+  let textColor = "#000000";
+  let creditIcon = "icon2";
+  let hideWatermark = false;
+
+  try {
+    const response = await admin.graphql(stylingQuery);
+    const data = await response.json();
+    const shop = data?.data?.shop;
+    if (shop) {
+      if (shop.bg_color?.value) bgColor = shop.bg_color.value;
+      if (shop.text_color?.value) textColor = shop.text_color.value;
+      if (shop.credit_icon?.value) creditIcon = shop.credit_icon.value;
+      if (shop.hide_watermark?.value)
+        hideWatermark = shop.hide_watermark.value === "true";
+    }
+  } catch (err) {
+    console.error("Error loading styling in programs_new loader:", err);
+  }
+
+  return {
+    program,
+    bgColor,
+    textColor,
+    creditIcon,
+    hideWatermark,
+    shop: session?.shop || "",
+  };
 };
 
 export const action = async ({ request }) => {
@@ -69,6 +116,13 @@ export default function NewProgram() {
   const [isStatusToggling, setIsStatusToggling] = useState(false);
   const loaderData = useLoaderData();
   const initialProgram = loaderData?.program;
+  const bgColor = loaderData?.bgColor || "#cfb84a";
+  const textColor = loaderData?.textColor || "#000000";
+  const creditIcon = loaderData?.creditIcon || "icon2";
+  const hideWatermark = !!loaderData?.hideWatermark;
+  const shop = loaderData?.shop || "";
+  const shopName = shop.replace(".myshopify.com", "");
+  const customizeEmailUrl = `https://admin.shopify.com/store/${shopName}/email_templates/store_credit_issued/preview`;
 
   const fetcher = useFetcher();
 
@@ -453,6 +507,16 @@ export default function NewProgram() {
   return (
     <Page
       title={`${name}`}
+      titleMetadata={
+        <s-badge tone={currentStatus === "Active" ? "success" : "subdued"}>
+          {currentStatus}
+        </s-badge>
+      }
+      primaryAction={{
+        content: currentStatus === "Active" ? "Deactivate" : "Activate",
+        onAction: toggleStatus,
+        loading: isStatusToggling,
+      }}
       backAction={{
         content: "Back",
         onAction: () => {
@@ -478,32 +542,10 @@ export default function NewProgram() {
       </ui-save-bar>
 
       <s-box padding="5">
-        {/* Header Row */}
-        <s-box paddingBlockEnd="loose">
-          <s-stack direction="inline" alignment="center">
-            <s-stack direction="inline" gap="base" alignment="center">
-              <s-badge
-                tone={currentStatus === "Active" ? "success" : "subdued"}
-              >
-                {currentStatus}
-              </s-badge>
-            </s-stack>
-            <s-box flex="1" />
-            <s-stack direction="inline" gap="tight">
-              <s-button
-                variant={currentStatus === "Active" ? "secondary" : "primary"}
-                onClick={toggleStatus}
-                loading={isStatusToggling ? "true" : undefined}
-              >
-                {currentStatus === "Active" ? "Deactivate" : "Activate"}
-              </s-button>
-            </s-stack>
-          </s-stack>
-        </s-box>
-
         <s-grid gridTemplateColumns="2fr 1fr" gap="base" alignItems="start">
           {/* Left Column - Form */}
           <s-box>
+            {/* Settings Form Stack */}
             <s-stack direction="block" gap="base">
               {/* Program Name */}
               <s-section>
@@ -576,18 +618,80 @@ export default function NewProgram() {
                 showCartDrawerPoints={showCartDrawerPoints}
                 setShowCartDrawerPoints={setShowCartDrawerPoints}
               />
+
+              {/* Email Notification Settings */}
+              <s-section>
+                <s-stack>
+                  <s-box padding="4">
+                    <s-heading variant="headingSm">
+                      Email notification settings
+                    </s-heading>
+                  </s-box>
+                  <s-box padding="5" paddingBlockStart="0">
+                    <s-stack direction="block">
+                      <s-text color="subdued">
+                        Notify customers or the company's main contact when
+                        store credit is successfully issued.
+                      </s-text>
+                      <s-checkbox
+                        label="Notify customers via Shopify notifications"
+                        checked={notifyEmail}
+                        onInput={(e) => setNotifyEmail(e.target.checked)}
+                      />
+                      <s-box paddingBlockStart="1">
+                        <s-text>
+                          <a
+                            href={customizeEmailUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: "#0066cc",
+                              textDecoration: "underline",
+                              fontSize: "13px",
+                            }}
+                          >
+                            Customize email content
+                          </a>{" "}
+                          in Customer notifications.
+                        </s-text>
+                      </s-box>
+                    </s-stack>
+                  </s-box>
+                </s-stack>
+              </s-section>
             </s-stack>
           </s-box>
 
-          <PreviewSection
-            previewPage={previewPage}
-            setPreviewPage={setPreviewPage}
-            eligibility={eligibility}
-            displayAmount={displayAmount}
-            handleSave={handleSave}
-            isSubmitting={isSubmitting}
-            editId={editId}
-          />
+          {/* Right Column - Brand-Styled Preview Section & Save Button */}
+          <s-box style={{ position: "sticky", top: "20px" }}>
+            <s-stack direction="block" gap="base">
+              <PreviewSection
+                previewPage={previewPage}
+                setPreviewPage={setPreviewPage}
+                eligibility={eligibility}
+                displayAmount={displayAmount}
+                bgColor={bgColor}
+                textColor={textColor}
+                creditIcon={creditIcon}
+                hideWatermark={hideWatermark}
+              />
+
+              {/* Static Save Button directly below Preview card */}
+              <s-box paddingBlockStart="3">
+                <s-stack direction="inline" alignment="center">
+                  <s-box flex="1" />
+                  <s-button
+                    variant="primary"
+                    onClick={handleSave}
+                    loading={isSubmitting ? "true" : undefined}
+                    disabled={isSubmitting}
+                  >
+                    Save
+                  </s-button>
+                </s-stack>
+              </s-box>
+            </s-stack>
+          </s-box>
         </s-grid>
       </s-box>
     </Page>

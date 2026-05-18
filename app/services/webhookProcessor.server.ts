@@ -174,6 +174,7 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
           id
           name
           displayFulfillmentStatus
+          displayFinancialStatus
           currentTotalPriceSet {
             presentmentMoney {
               amount
@@ -184,6 +185,7 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
             id
             firstName
             lastName
+            email
           }
           lineItems(first: 50) {
             nodes {
@@ -242,12 +244,44 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
     const currencyCode = mappedOrder.currency || 'USD';
     const expiresAt = calculateExpirationDate(program);
 
+    // Email Send Conditions:
+    const isNotifyEmailSettingTrue = !!program.notifyEmail;
+    const isPaymentSuccessful = fullOrder.displayFinancialStatus?.toUpperCase() === "PAID" ||
+                                fullOrder.displayFinancialStatus?.toUpperCase() === "PARTIALLY_PAID" ||
+                                fullOrder.displayFinancialStatus?.toUpperCase() === "AUTHORIZED";
+    const customerEmail = fullOrder.customer?.email || "";
+    const hasValidEmail = typeof customerEmail === 'string' && customerEmail.trim().length > 0 && customerEmail.includes('@');
+
+    const shouldNotify = isNotifyEmailSettingTrue && isPaymentSuccessful && isFulfilled && hasValidEmail;
+
+    let computedEmailStatus = "Not Sent";
+    let computedEmailFailReason = "";
+
+    if (isNotifyEmailSettingTrue) {
+      if (!isPaymentSuccessful) {
+        computedEmailStatus = "Failed";
+        computedEmailFailReason = `Payment status is ${fullOrder.displayFinancialStatus || 'Unknown'} (expected Paid/Authorized)`;
+      } else if (!isFulfilled) {
+        computedEmailStatus = "Failed";
+        computedEmailFailReason = `Fulfillment status is ${fullOrder.displayFulfillmentStatus || 'Unknown'} (expected Fulfilled)`;
+      } else if (!hasValidEmail) {
+        computedEmailStatus = "Failed";
+        computedEmailFailReason = customerEmail ? "Customer email is invalid" : "Customer has no email address";
+      } else {
+        computedEmailStatus = "Sent";
+      }
+    } else {
+      computedEmailStatus = "Not Sent";
+      computedEmailFailReason = "Metafield notifyEmail setting is disabled";
+    }
+
     const storeCreditResult = await addStoreCredit(
       adminClient,
       customerId,
       cashbackAmount,
       currencyCode,
-      expiresAt
+      expiresAt,
+      shouldNotify
     );
 
     const isSuccessful = storeCreditResult && 
@@ -255,7 +289,15 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
                        storeCreditResult.storeCreditAccountTransaction;
 
     if (isSuccessful) {
-      // 1. Update MongoDB
+      let finalEmailStatus = computedEmailStatus;
+      let finalEmailFailReason = computedEmailFailReason;
+
+      if (storeCreditResult.emailUnsupported) {
+        finalEmailStatus = "Failed";
+        finalEmailFailReason = "Shopify API version does not support native email notifications";
+      }
+
+      // 1. Update MongoDB on successful credit issue
       if (existingDoc && existingTx) {
         await ShopModel.updateOne(
           { _id: existingDoc._id, "events.orderId": orderId },
@@ -263,12 +305,13 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
             $set: {
               "events.$.status": "Completed",
               "events.$.amount": cashbackAmount,
-              "events.$.emailStatus": program.notifyEmail ? "Sent" : "Not Sent",
+              "events.$.emailStatus": finalEmailStatus,
+              "events.$.emailFailReason": finalEmailFailReason,
               "events.$.issuedAt": new Date(),
             }
           }
         );
-        console.log(`🎉 Updated order ${orderName} to COMPLETED in MongoDB.`);
+        console.log(`🎉 Updated order ${orderName} to COMPLETED with emailStatus: ${finalEmailStatus} in MongoDB.`);
       } else {
         const newEvent = {
           shop,
@@ -279,7 +322,8 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
           amount: cashbackAmount,
           currency: currencyCode,
           status: "Completed",
-          emailStatus: program.notifyEmail ? "Sent" : "Not Sent",
+          emailStatus: finalEmailStatus,
+          emailFailReason: finalEmailFailReason,
           type: program.programType === "product" ? "Custom Program" : "Cashback",
           issuedAt: new Date(),
           createdAt: new Date(),
@@ -298,9 +342,8 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
             } catch (err) {}
           }
         }
-        console.log(`🎉 Saved new COMPLETED transaction for order ${orderName} in MongoDB.`);
+        console.log(`🎉 Saved new COMPLETED transaction for order ${orderName} with emailStatus: ${finalEmailStatus} in MongoDB.`);
       }
-
 
       // 2. Update Shopify Order Note
       try {
@@ -326,7 +369,53 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
         console.error(`⚠️ Failed to update order note for ${orderName}:`, err);
       }
     } else {
-      console.log(`❌ Store credit issue failed for ${orderName}. Result:`, JSON.stringify(storeCreditResult));
+      // 3. Update MongoDB on failed credit issue
+      const errorMsg = storeCreditResult?.userErrors?.map((e: any) => e.message).join(", ") || "Failed to add store credit";
+      console.log(`❌ Store credit issue failed for ${orderName}. Error: ${errorMsg}`);
+      
+      if (existingDoc && existingTx) {
+        await ShopModel.updateOne(
+          { _id: existingDoc._id, "events.orderId": orderId },
+          {
+            $set: {
+              "events.$.status": "Failed",
+              "events.$.emailStatus": "Failed",
+              "events.$.emailFailReason": errorMsg,
+              "events.$.issuedAt": new Date(),
+            }
+          }
+        );
+      } else {
+        const newEvent = {
+          shop,
+          orderId,
+          orderName,
+          customerId,
+          customerName,
+          amount: cashbackAmount,
+          currency: currencyCode,
+          status: "Failed",
+          emailStatus: "Failed",
+          emailFailReason: errorMsg,
+          type: program.programType === "product" ? "Custom Program" : "Cashback",
+          issuedAt: new Date(),
+          createdAt: new Date(),
+        };
+
+        const updateResult = await ShopModel.updateOne(
+          { date: todayStr, "events.orderId": { $ne: orderId } },
+          { $push: { events: newEvent } }
+        );
+
+        if (updateResult.matchedCount === 0) {
+          const dateDoc = await ShopModel.findOne({ date: todayStr });
+          if (!dateDoc) {
+            try {
+              await ShopModel.create({ date: todayStr, events: [newEvent] });
+            } catch (err) {}
+          }
+        }
+      }
     }
   }
 }
