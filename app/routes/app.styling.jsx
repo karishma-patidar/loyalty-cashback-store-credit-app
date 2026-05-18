@@ -9,9 +9,10 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Page } from "@shopify/polaris";
+import StylingPreview from "../components/Styling_page/StylingPreview";
 
 export async function loader({ request }) {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const query = `#graphql
     query GetStylingMetafields {
@@ -177,24 +178,9 @@ const ICONS = {
       <circle cx="16" cy="12" r="2" fill={color} />
     </svg>
   ),
-  icon5: (color = "#9CA3AF") => (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <circle cx="12" cy="12" r="10" fill={color} />
-      <polygon
-        points="12,7 13.5,10.5 17.5,10.5 14,13 15.5,17 12,14.5 8.5,17 10,13 6.5,10.5 10.5,10.5"
-        fill="#FFF"
-      />
-    </svg>
-  ),
 };
 
-export default function WidgetStyling() {
+export default function StylingPage() {
   const shopify = useAppBridge();
   const navigate = useNavigate();
   const loaderData = useLoaderData();
@@ -222,11 +208,10 @@ export default function WidgetStyling() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Refs for custom web component event capturing
+  // Refs for color inputs
   const bgColorFieldRef = useRef(null);
   const textColorFieldRef = useRef(null);
 
-  // Capture background color changes
   useEffect(() => {
     const el = bgColorFieldRef.current;
     if (!el) return;
@@ -245,7 +230,6 @@ export default function WidgetStyling() {
     };
   }, []);
 
-  // Capture text color changes
   useEffect(() => {
     const el = textColorFieldRef.current;
     if (!el) return;
@@ -264,7 +248,6 @@ export default function WidgetStyling() {
     };
   }, []);
 
-  // Dirty Form Checking
   const currentFormState = JSON.stringify({
     bgColor,
     textColor,
@@ -286,9 +269,9 @@ export default function WidgetStyling() {
 
   useEffect(() => {
     if (isDirty) {
-      shopify.saveBar.show("widget-styling-save-bar");
+      shopify.saveBar.show("styling-save-bar");
     } else {
-      shopify.saveBar.hide("widget-styling-save-bar");
+      shopify.saveBar.hide("styling-save-bar");
     }
   }, [isDirty, shopify]);
 
@@ -297,12 +280,11 @@ export default function WidgetStyling() {
     currentFormStateRef.current = currentFormState;
   }, [currentFormState]);
 
-  // Action feedback
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
       setIsSubmitting(false);
       if (fetcher.data.success) {
-        shopify.toast.show("Program updated!");
+        shopify.toast.show("Styling updated!");
         setInitialFormState(currentFormStateRef.current);
       } else {
         shopify.toast.show(
@@ -354,7 +336,6 @@ export default function WidgetStyling() {
     setHideWatermark(initial.hideWatermark);
   }, [initialFormState]);
 
-  // Render correct icon in banner
   const renderBannerIcon = () => {
     if (creditIcon === "custom" && customIconSrc) {
       return (
@@ -400,10 +381,7 @@ export default function WidgetStyling() {
         },
       }}
     >
-      <ui-save-bar
-        id="widget-styling-save-bar"
-        open={isDirty ? "true" : undefined}
-      >
+      <ui-save-bar id="styling-save-bar" open={isDirty ? "true" : undefined}>
         <button
           variant="primary"
           onClick={handleSave}
@@ -421,7 +399,6 @@ export default function WidgetStyling() {
         <s-grid gridTemplateColumns="2fr 1fr" gap="base" alignItems="start">
           {/* Left Column - Settings Panels */}
           <s-stack direction="block" gap="base">
-            {/* Card 1 - Watermark Toggle */}
             <s-section>
               <s-box padding="4">
                 <s-checkbox
@@ -432,33 +409,28 @@ export default function WidgetStyling() {
               </s-box>
             </s-section>
 
-            {/* Card 2 - Styling Settings */}
             <s-section>
               <s-box padding="5">
                 <s-stack direction="block" gap="base">
                   <s-heading variant="headingSm">Styles</s-heading>
 
-                  {/* Background Color Picker */}
                   <s-color-field
                     ref={bgColorFieldRef}
                     label="Background color"
                     value={bgColor}
                   ></s-color-field>
 
-                  {/* Text Primary Color Picker */}
                   <s-color-field
                     ref={textColorFieldRef}
                     label="Text primary color"
                     value={textColor}
                   ></s-color-field>
 
-                  {/* Credit Icon Selection & Upload */}
                   <s-stack direction="block" gap="tight">
                     <s-text color="subdued" variant="bold">
                       Credit icon
                     </s-text>
                     <s-stack direction="inline" gap="base" alignment="center">
-                      {/* Icon 1 Select */}
                       <button
                         type="button"
                         onClick={() => setCreditIcon("icon1")}
@@ -480,7 +452,6 @@ export default function WidgetStyling() {
                         {ICONS.icon1()}
                       </button>
 
-                      {/* Icon 2 Select */}
                       <button
                         type="button"
                         onClick={() => setCreditIcon("icon2")}
@@ -502,7 +473,6 @@ export default function WidgetStyling() {
                         {ICONS.icon2()}
                       </button>
 
-                      {/* Icon 3 Select */}
                       <button
                         type="button"
                         onClick={() => setCreditIcon("icon3")}
@@ -524,7 +494,6 @@ export default function WidgetStyling() {
                         {ICONS.icon3()}
                       </button>
 
-                      {/* Icon 4 Select */}
                       <button
                         type="button"
                         onClick={() => setCreditIcon("icon4")}
@@ -546,7 +515,6 @@ export default function WidgetStyling() {
                         {ICONS.icon4()}
                       </button>
 
-                      {/* Upload File Input Button */}
                       <label
                         style={{
                           width: "88px",
@@ -613,7 +581,6 @@ export default function WidgetStyling() {
                         <>
                           <s-text color="subdued">or</s-text>
 
-                          {/* Custom Uploaded Preview Select */}
                           <button
                             type="button"
                             onClick={() => setCreditIcon("custom")}
@@ -653,7 +620,6 @@ export default function WidgetStyling() {
 
           {/* Right Column - Live Preview Card */}
           <s-stack direction="block" gap="base">
-            {/* Header row of Preview card */}
             <s-stack direction="inline" alignment="center">
               <s-heading variant="headingSm">Preview section</s-heading>
               <s-box flex="1" />
@@ -666,7 +632,6 @@ export default function WidgetStyling() {
               </s-select>
             </s-stack>
 
-            {/* Container for Preview card */}
             <s-section>
               <s-box
                 padding="5"
@@ -677,244 +642,13 @@ export default function WidgetStyling() {
                   justifyContent: "space-between",
                 }}
               >
-                {/* CART PAGE PREVIEW */}
-                {previewPage === "cart" && (
-                  <s-stack
-                    gap="base"
-                    style={{
-                      width: "100%",
-                      flex: 1,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "20px",
-                    }}
-                  >
-                    <s-heading variant="headingXs">Your cart</s-heading>
-
-                    {/* Columns */}
-                    <s-stack direction="inline" alignment="center">
-                      <s-text color="subdued" variant="bold">
-                        Product
-                      </s-text>
-                      <s-box flex="1" />
-                      <s-text color="subdued" variant="bold">
-                        Total
-                      </s-text>
-                    </s-stack>
-
-                    <s-divider />
-
-                    {/* Product Row */}
-                    <s-stack direction="inline" gap="base" alignment="center">
-                      <img
-                        src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
-                        alt="Example T-Shirt"
-                        style={{
-                          width: "48px",
-                          height: "48px",
-                          objectFit: "cover",
-                          borderRadius: "6px",
-                          border: "1px solid #E4E8EC",
-                        }}
-                      />
-                      <s-stack direction="block" gap="none">
-                        <s-text variant="bold">Example T-Shirt</s-text>
-                        <s-text color="subdued" variant="small">
-                          x 1
-                        </s-text>
-                      </s-stack>
-                      <s-box flex="1" />
-                      <s-text variant="bold">Rs. 25.00</s-text>
-                    </s-stack>
-
-                    <s-divider />
-
-                    <s-box>
-                      <s-stack direction="block" gap="tight" alignment="end">
-                        <s-stack
-                          direction="inline"
-                          alignment="center"
-                          gap="base"
-                        >
-                          <s-heading variant="headingMd">Subtotal:</s-heading>
-                          <s-heading variant="headingMd">Rs. 25.00</s-heading>
-                        </s-stack>
-                        <s-text
-                          color="subdued"
-                          variant="small"
-                          style={{ fontStyle: "italic" }}
-                        >
-                          Taxes and shipping calculated at checkout
-                        </s-text>
-                      </s-stack>
-                    </s-box>
-
-                    {/* Store Credit Live Banner */}
-                    <div
-                      style={{
-                        backgroundColor: bgColor,
-                        color: textColor,
-                        padding: "10px",
-                        borderRadius: "8px",
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        textAlign: "left",
-                      }}
-                    >
-                      {renderBannerIcon()}
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "2px",
-                          flex: 1,
-                        }}
-                      >
-                        <p
-                          style={{
-                            margin: 0,
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            lineHeight: "1.4",
-                            color: "inherit",
-                          }}
-                        >
-                          You will get{" "}
-                          <strong
-                            style={{ fontWeight: "800", color: "inherit" }}
-                          >
-                            Rs. 3.75
-                          </strong>{" "}
-                          store credit after this purchase.
-                        </p>
-                        {!hideWatermark && (
-                          <p
-                            style={{
-                              margin: "2px 0 0",
-                              fontSize: "10px",
-                              opacity: 0.7,
-                              lineHeight: "1",
-                              color: "inherit",
-                            }}
-                          >
-                            Powered by{" "}
-                            <span style={{ textDecoration: "underline" }}>
-                              Getkoin.io
-                            </span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Checkout Button */}
-                    <s-box paddingBlockStart="4" style={{ marginTop: "auto" }}>
-                      <s-button variant="primary" block>
-                        Checkout
-                      </s-button>
-                    </s-box>
-                  </s-stack>
-                )}
-
-                {/* PRODUCT PAGE PREVIEW */}
-                {previewPage === "product" && (
-                  <s-stack
-                    gap="base"
-                    style={{
-                      width: "100%",
-                      flex: 1,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "16px",
-                    }}
-                  >
-                    <img
-                      src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
-                      alt="Example T-Shirt"
-                      style={{
-                        width: "100%",
-                        height: "176px",
-                        objectFit: "cover",
-                        borderRadius: "8px",
-                        border: "1px solid #E4E8EC",
-                      }}
-                    />
-
-                    <s-stack direction="block" gap="none">
-                      <s-heading variant="headingMd">Example T-Shirt</s-heading>
-                      <s-text color="subdued" variant="bold">
-                        Rs. 25.00
-                      </s-text>
-                    </s-stack>
-
-                    {/* Store Credit Live Banner */}
-                    <div
-                      style={{
-                        backgroundColor: bgColor,
-                        color: textColor,
-                        padding: "16px",
-                        borderRadius: "8px",
-                        border: "1px solid rgba(0,0,0,0.08)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        textAlign: "left",
-                      }}
-                    >
-                      {renderBannerIcon()}
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "2px",
-                          flex: 1,
-                        }}
-                      >
-                        <p
-                          style={{
-                            margin: 0,
-                            fontSize: "13px",
-                            fontWeight: "600",
-                            lineHeight: "1.4",
-                            color: "inherit",
-                          }}
-                        >
-                          Receive{" "}
-                          <strong
-                            style={{ fontWeight: "800", color: "inherit" }}
-                          >
-                            Rs. 3.75
-                          </strong>{" "}
-                          store credit when purchasing each item.
-                        </p>
-                        {!hideWatermark && (
-                          <p
-                            style={{
-                              margin: "2px 0 0",
-                              fontSize: "10px",
-                              opacity: 0.7,
-                              lineHeight: "1",
-                              color: "inherit",
-                            }}
-                          >
-                            Powered by{" "}
-                            <span style={{ textDecoration: "underline" }}>
-                              Getkoin.io
-                            </span>
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Add to cart Button */}
-                    <s-box paddingBlockStart="4" style={{ marginTop: "auto" }}>
-                      <s-button variant="primary" block>
-                        Add to cart
-                      </s-button>
-                    </s-box>
-                  </s-stack>
-                )}
+                <StylingPreview
+                  previewPage={previewPage}
+                  bgColor={bgColor}
+                  textColor={textColor}
+                  renderBannerIcon={renderBannerIcon}
+                  hideWatermark={hideWatermark}
+                />
               </s-box>
             </s-section>
           </s-stack>

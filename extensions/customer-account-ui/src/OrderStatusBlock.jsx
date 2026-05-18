@@ -5,14 +5,15 @@ export default extension(
   (root) => {
     const banner = root.createComponent(Banner, {
       status: 'success',
-      title: 'You will receive store credit after this purchase.',
+      title: 'Cashback & Store Credit',
     });
 
-    const text = root.createComponent(Text, {
-      size: 'small',
-      appearance: 'subdued',
-    });
-    text.appendChild(root.createText('Powered by Loyalty Credit'));
+    const text = root.createComponent(
+      Text,
+      {},
+      'Congratulations! You earned store credit with this purchase. Your reward will be updated and credited to your account once your order is fulfilled.'
+    );
+
     banner.appendChild(text);
     root.appendChild(banner);
   }

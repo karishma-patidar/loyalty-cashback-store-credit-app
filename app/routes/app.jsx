@@ -3,6 +3,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import enTranslations from "@shopify/polaris/locales/en.json";
 import "@shopify/polaris/build/esm/styles.css";
 
 export const loader = async ({ request }) => {
@@ -21,7 +22,7 @@ export default function App() {
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      <PolarisAppProvider>
+      <PolarisAppProvider i18n={enTranslations}>
         <s-app-nav>
           <s-link href="/app/programs">Programs</s-link>
           <s-link href="/app/promotion_widgets">Promotion Widgets</s-link>
