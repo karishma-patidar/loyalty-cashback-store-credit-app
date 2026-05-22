@@ -21,7 +21,7 @@ export function AdvancedSettings({
           <s-heading variant="headingSm">Advanced settings</s-heading>
         </s-box>
         <s-box padding="5">
-          <s-stack direction="block" gap="base">
+          <s-stack direction="block" gap="tight">
             <s-checkbox
               label="Enable expiration date"
               checked={enableExpiration}

@@ -311,77 +311,7 @@ export default function Index() {
           </s-stack>
         </s-box>
 
-        {/* Analytics & Widget Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Performance */}
-          <s-box
-            padding="base"
-            background="surface"
-            borderWidth="base"
-            borderRadius="base"
-          >
-            <s-stack direction="block" gap="base">
-              <div className="flex justify-between items-center">
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Performance
-                </h3>
-                <s-button variant="tertiary">View Report</s-button>
-              </div>
-              <s-stack direction="inline" gap="base">
-                <div className="flex-1 p-4 rounded-xl bg-gray-50 border border-gray-100">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                    Credits Issued
-                  </p>
-                  <p className="text-xl font-black text-gray-900">$0.00</p>
-                </div>
-                <div className="flex-1 p-4 rounded-xl bg-gray-50 border border-gray-100">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                    Total Orders
-                  </p>
-                  <p className="text-xl font-black text-gray-900">0</p>
-                </div>
-              </s-stack>
-            </s-stack>
-          </s-box>
 
-          {/* Promotion Widget */}
-          <s-box
-            padding="base"
-            background="surface"
-            borderWidth="base"
-            borderRadius="base"
-          >
-            <div className="flex items-start gap-4">
-              <div className="flex-1">
-                <h3 className="text-sm font-semibold text-gray-900 mb-1">
-                  Promotion Widget
-                </h3>
-                <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                  Encourage customers to join your loyalty program by showing a
-                  promotion widget on your storefront.
-                </p>
-                <s-button variant="secondary">Set up widget</s-button>
-              </div>
-              <div className="w-20 h-20 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="32"
-                  height="32"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#6366f1"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <line x1="3" y1="9" x2="21" y2="9" />
-                  <line x1="9" y1="21" x2="9" y2="9" />
-                </svg>
-              </div>
-            </div>
-          </s-box>
-        </div>
       </s-stack>
     </s-page>
   );

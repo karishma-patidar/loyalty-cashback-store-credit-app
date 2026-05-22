@@ -542,7 +542,7 @@ export default function NewProgram() {
       </ui-save-bar>
 
       <s-box padding="5">
-        <s-grid gridTemplateColumns="2fr 1fr" gap="base" alignItems="start">
+        <s-grid gridTemplateColumns="1.5fr 1fr" gap="base" alignItems="start">
           {/* Left Column - Form */}
           <s-box>
             {/* Settings Form Stack */}

@@ -84,7 +84,8 @@
       {% endif %}
     {% else %}
       {% comment %} Cart Page: Dynamic sum per item quantity for product-based programs {% endcomment %}
-      {% for item in cart.items %}
+      {% assign line_items = checkout.line_items | default: order.line_items | default: cart.items %}
+      {% for item in line_items %}
         {% assign item_cashback_cents = 0 %}
         {% if active_program.amountType == 'Percentage' %}
           {% assign amount_num = active_program.amount | plus: 0 %}
@@ -123,7 +124,7 @@
           | default: 0
         %}
       {% else %}
-        {% assign base_price = cart.total_price | default: 0 %}
+        {% assign base_price = checkout.total_price | default: order.total_price | default: cart.total_price | default: 0 %}
       {% endif %}
 
       {% assign amount_num = active_program.amount | plus: 0 %}
@@ -148,17 +149,25 @@
 
   {% assign formatted_credit = credit_amount_cents | money %}
 
+  {% assign is_thankyou = false %}
+  {% if request.page_type == 'checkout' or request.page_type == 'thank_you' or template.name == 'checkout' or template.name == 'thank_you' or template.name == 'order' or template == 'checkout' or template == 'thank_you' or template == 'order' %}
+    {% assign is_thankyou = true %}
+  {% endif %}
+
   {% if request.page_type == 'product' %}
     {% assign raw_msg = active_program.msgProduct
       | default: 'Receive {loyalty_credit_amount} store credit when purchasing each item.'
     %}
+  {% elsif is_thankyou %}
+    {% assign raw_msg = "Thank you for your purchase! 🎉 You'll earn {loyalty_credit_amount} once your order is fulfilled. Use it on your next purchase to save more!" %}
   {% else %}
     {% assign raw_msg = active_program.msgCart
       | default: 'You will get {loyalty_credit_amount} store credit after this purchase.'
     %}
   {% endif %}
 
-  {% assign final_msg = raw_msg | replace: '{loyalty_credit_amount}', formatted_credit %}
+  {% capture amount_html %}<span class="loyalty-credit-amount">{{ formatted_credit }}</span>{% endcapture %}
+  {% assign final_msg = raw_msg | replace: '{loyalty_credit_amount}', amount_html %}
 
   {% assign default_msg_prod = 'Receive {loyalty_credit_amount} store credit when purchasing each item.' %}
   {% assign escaped_msg_prod = active_program.msgProduct | default: default_msg_prod | escape %}
@@ -179,6 +188,19 @@
     | default: shop.metafields.loyalty_cashback_app.hide_watermark
   %}
 
+  {% assign current_bg = bg_color %}
+  {% if bg_color == '#FEFCE8' %}
+    {% assign current_border = '#FEF08A' %}
+  {% else %}
+    {% assign current_border = 'rgba(0,0,0,0.08)' %}
+  {% endif %}
+  {% assign current_text = text_color %}
+  {% if is_thankyou %}
+    {% assign current_bg = '#F4F6F8' %}
+    {% assign current_border = '#E4E8EC' %}
+    {% assign current_text = '#333333' %}
+  {% endif %}
+
   <div
     class="loyalty-credit-block{% if request.page_type == 'product' %} loyalty-credit-product-block{% endif %}"
     data-page-type="{{ request.page_type }}"
@@ -188,13 +210,18 @@
     data-amount-type="{{ active_program.amountType | default: 'Fixed amount' }}"
     data-max-amount="{{ active_program.maxAmount | default: 0 }}"
     data-msg-product="{{ escaped_msg_prod }}"
-    style="background-color: {{ bg_color }}; padding: 16px; border-radius: 8px; color: {{ text_color }}; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;"
+    style="background-color: {{ current_bg }}; padding: 16px; border-radius: 8px; color: {{ current_text }}; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 8px; border: 1px solid {{ current_border }}; font-family: inherit; text-align: left; width: 100%;"
   >
     <div
       class="loyalty-icon"
       style="display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px;"
     >
-      {% if credit_icon == 'icon1' %}
+      {% if is_thankyou %}
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" stroke="#637381" stroke-width="2" fill="none" />
+          <path d="M12 11v5M12 8h.01" stroke="#637381" stroke-width="2" stroke-linecap="round" />
+        </svg>
+      {% elsif credit_icon == 'icon1' %}
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="12" cy="12" r="10" fill="#F59E0B" />
           <path d="M12 7l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4-2.9-2.8 4-.6L12 7z" fill="#FFF" />
@@ -223,7 +250,7 @@
       <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;">
         {{ final_msg }}
       </p>
-      {% if hide_watermark != 'true' and hide_watermark != true %}
+      {% if hide_watermark != 'true' and hide_watermark != true and is_thankyou == false %}
         <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">
           Powered by
           <a href="https://getkoin.io" target="_blank" style="color: inherit; text-decoration: underline;"

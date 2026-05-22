@@ -45,7 +45,7 @@ const WIDGETS = [
     blockHandle: "credit_block",
     previewSvg: (
       <img
-        src="https://cdn.getkoin.io/portal/widget-product-promotion.png"
+        src="https://cdn.getkoin.io/portal/widget-cart-promotion.png"
         alt="Cart promotion widget preview"
         className="w-full h-full object-contain"
       />
@@ -53,17 +53,17 @@ const WIDGETS = [
   },
   {
     id: "notification-banner",
-    title: "Cashback - Notification banner",
+    title: "Cashback Notification",
     category: "Cashback",
     placement: "Order status page",
     badgeTone: "info",
     description:
       "Display a cashback notification banner to let buyers track the status of issued store credit.",
-    templateTarget: "index",
-    blockHandle: "loyalty_credit_app_embed",
+    templateTarget: "checkout",
+    blockHandle: "cashback_notification",
     previewSvg: (
       <img
-        src="https://cdn.getkoin.io/portal/widget-product-promotion.png"
+        src="https://cdn.getkoin.io/portal/widget-cart-promotion.png"
         alt="Notification banner preview"
         className="w-full h-full object-contain"
       />
@@ -81,7 +81,7 @@ const WIDGETS = [
     blockHandle: "credit_block",
     previewSvg: (
       <img
-        src="https://cdn.getkoin.io/portal/widget-product-promotion.png"
+        src="https://cdn.getkoin.io/portal/widget-credit-history.png"
         alt="Credit history preview"
         className="w-full h-full object-contain"
       />
@@ -99,7 +99,7 @@ const WIDGETS = [
     blockHandle: "credit_block",
     previewSvg: (
       <img
-        src="https://cdn.getkoin.io/portal/widget-product-promotion.png"
+        src="https://cdn.getkoin.io/portal/widget-cart-promotion.png"
         alt="Custom program promotion preview"
         className="w-full h-full object-contain"
       />
@@ -117,7 +117,7 @@ const WIDGETS = [
     blockHandle: "credit_block",
     previewSvg: (
       <img
-        src="https://cdn.getkoin.io/portal/widget-product-promotion.png"
+        src="https://cdn.getkoin.io/portal/widget-checkout-promotion.png"
         alt="Checkout widget preview"
         className="w-full h-full object-contain"
       />
@@ -146,9 +146,14 @@ export default function WidgetSettings() {
   const shopSubdomain = shop ? shop.split(".")[0] : "";
 
   const handleSetup = (widget) => {
-    const targetQuery =
-      widget.blockHandle === "credit_block" ? "&target=mainSection" : "";
-    const editorUrl = `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?template=${widget.templateTarget}&addAppBlockId=${extensionId}/${widget.blockHandle}${targetQuery}`;
+    if (widget.id === "notification-banner") {
+      const editorUrl = `https://admin.shopify.com/store/${shopSubdomain}/settings/checkout/editor/profiles/3122331696?exitPath=%2Fadmin%2Fthemes%2F141941571632%2Feditor&page=order-status&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/cashback_notification`;
+      window.open(editorUrl, "_blank");
+      shopify.toast.show("Opening Checkout Customization Editor...");
+      return;
+    }
+
+    const editorUrl = `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?template=${widget.templateTarget}&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/${widget.blockHandle}&target=mainSection`;
     window.open(editorUrl, "_blank");
     shopify.toast.show(
       `Opening Shopify Theme Editor for ${widget.placement}...`,
@@ -159,37 +164,28 @@ export default function WidgetSettings() {
     <s-box background="subdued" className="min-h-screen pb-12">
       <s-page>
         <s-box className="max-w-[1200px] mx-auto pt-6">
-          {/* Header Row */}
-          <s-stack direction="inline" alignment="center" className="mb-6">
-            <s-button
-              variant="tertiary"
-              icon="chevron-left"
-              onClick={() => navigate("/app/promotion_widgets")}
-              className="mr-2"
-            />
-            <s-heading variant="headingLg" className="text-[24px] font-bold">
-              Widget settings
-            </s-heading>
-          </s-stack>
-
-          {/* Subheader and Segmented Control */}
+          {/* Header Row with Inline Segmented Control on Right */}
           <s-stack gap="base">
             <s-stack
               direction="inline"
               justifyContent="space-between"
               alignment="center"
-              className="mb-6"
             >
-              <s-heading
-                variant="headingMd"
-                className="text-[18px] font-bold text-gray-800"
-              >
-                Configure and embed widgets
-              </s-heading>
+              <s-stack direction="inline" alignment="center">
+                <s-button
+                  variant="tertiary"
+                  icon="chevron-left"
+                  onClick={() => navigate("/app/promotion_widgets")}
+                  className="mr-2"
+                />
+                <s-heading variant="headingLg" className="font-bold">
+                  Widget settings
+                </s-heading>
+              </s-stack>
 
               <s-stack
                 direction="inline"
-                gap="tight"
+                gap="none"
                 className="bg-[#F4F6F8] p-1 rounded-lg border border-[#E4E8EC]"
               >
                 {tabs.map((tab) => (
@@ -209,62 +205,64 @@ export default function WidgetSettings() {
               </s-stack>
             </s-stack>
 
-            {/* Widgets Grid */}
-            <s-grid
-              gridTemplateColumns="repeat(3, 1fr)"
-              gap="base"
-              className="gap-6"
-            >
-              {filteredWidgets.map((widget) => (
-                <s-box
-                  key={widget.id}
-                  background="surface"
-                  borderWidth="base"
-                  borderRadius="base"
-                  className="shadow-sm border-gray-200 overflow-hidden flex flex-col justify-between"
-                >
-                  {/* Header Mockup Illustration */}
-                  <s-box className="w-full bg-[#F4F6F8] border-b border-gray-200 aspect-video flex items-center justify-center p-4">
-                    {widget.previewSvg}
-                  </s-box>
-
-                  {/* Content Body */}
-                  <s-box
-                    padding="4"
-                    className="flex flex-col flex-1 justify-between gap-4"
+            <s-stack gap="base">
+              {/* Widgets Grid */}
+              <s-grid
+                gridTemplateColumns="repeat(3, 1fr)"
+                gap="base"
+                className="gap-6"
+              >
+                {filteredWidgets.map((widget) => (
+                  <s-stack
+                    gap="base"
+                    key={widget.id}
+                    background="surface"
+                    className="shadow-sm overflow-hidden flex flex-col justify-between p-4 rounded-xl bg-white"
                   >
-                    <s-stack gap="base" className="flex-col">
-                      <s-heading
-                        variant="headingMd"
-                        className="text-[16px] font-bold text-gray-900"
-                      >
-                        {widget.title}
-                      </s-heading>
-                      <s-box>
-                        <s-badge tone={widget.badgeTone}>
-                          {widget.placement}
-                        </s-badge>
-                      </s-box>
-                      <s-paragraph
-                        color="subdued"
-                        className="text-[13px] leading-relaxed mt-1"
-                      >
-                        {widget.description}
-                      </s-paragraph>
+                    {/* Header Mockup Illustration */}
+                    <s-stack className="w-full bg-[#F4F6F8] aspect-video flex items-center justify-center p-4">
+                      {widget.previewSvg}
                     </s-stack>
 
-                    <s-box className="pt-2 border-t border-gray-100">
-                      <s-button
-                        variant="primary"
-                        onClick={() => handleSetup(widget)}
-                      >
-                        Set up
-                      </s-button>
-                    </s-box>
-                  </s-box>
-                </s-box>
-              ))}
-            </s-grid>
+                    {/* Content Body */}
+                    <s-stack
+                      padding="4"
+                      gap="base"
+                      className="flex flex-col flex-1 justify-between gap-4"
+                    >
+                      <s-stack gap="base" className="flex-col">
+                        <s-heading
+                          variant="headingMd"
+                          className="text-[16px] font-bold text-gray-900"
+                        >
+                          {widget.title}
+                        </s-heading>
+                        <s-box>
+                          <s-badge tone={widget.badgeTone}>
+                            {widget.placement}
+                          </s-badge>
+                        </s-box>
+                        <s-paragraph
+                          color="subdued"
+                          className="text-[13px] leading-relaxed mt-1"
+                        >
+                          {widget.description}
+                        </s-paragraph>
+                      </s-stack>
+
+                      <s-stack>
+                        <s-button
+                          variant="primary"
+                          onClick={() => handleSetup(widget)}
+                        >
+                          Set up
+                        </s-button>
+                      </s-stack>
+                    </s-stack>
+                  </s-stack>
+                ))}
+              </s-grid>
+            </s-stack>
           </s-stack>
         </s-box>
       </s-page>

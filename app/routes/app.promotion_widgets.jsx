@@ -61,7 +61,7 @@ export const PromotionWidgets = () => {
             </s-box>
             <s-clickable
               padding="small-100"
-              href="#"
+              onClick={() => navigate("/app/widget_translations")}
               accessibilityLabel="Manage text content and translations"
             >
               <s-grid

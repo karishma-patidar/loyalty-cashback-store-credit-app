@@ -48,6 +48,9 @@ const eventSchema = new mongoose.Schema({
   emailFailReason: String,
   type: String,
   issuedAt: Date,
+  processAt: Date,
+  expiresAt: Date,
+  shouldNotify: Boolean,
   createdAt: { type: Date, default: Date.now }
 });
 

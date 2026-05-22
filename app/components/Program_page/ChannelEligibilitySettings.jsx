@@ -14,7 +14,7 @@ export function ChannelEligibilitySettings({
             <s-heading variant="headingSm">Applying to sales channel</s-heading>
           </s-box>
           <s-box padding="5">
-            <s-stack direction="block" gap="base">
+            <s-stack direction="block">
               <s-checkbox
                 label="Online Store"
                 checked={channels.online}

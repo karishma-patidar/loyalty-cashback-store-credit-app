@@ -7,7 +7,11 @@
     msgCart: {{ active_program.msgCart | json }},
     currencySymbol: {{ cart.currency.symbol | json }},
     showCartDrawerPoints: {{ active_program.showCartDrawerPoints | default: false | json }},
-    eligibilityD2c: {{ active_program.eligibility.d2c | default: false | json }}
+    eligibilityD2c: {{ active_program.eligibility.d2c | default: false | json }},
+    bgColor: {{ shop.metafields.loyalty_cashback_app.widget_bg_color.value | default: shop.metafields.loyalty_cashback_app.widget_bg_color | default: '#FEFCE8' | json }},
+    textColor: {{ shop.metafields.loyalty_cashback_app.widget_text_color.value | default: shop.metafields.loyalty_cashback_app.widget_text_color | default: '#333333' | json }},
+    creditIcon: {{ shop.metafields.loyalty_cashback_app.widget_credit_icon.value | default: shop.metafields.loyalty_cashback_app.widget_credit_icon | default: 'icon2' | json }},
+    hideWatermark: {{ shop.metafields.loyalty_cashback_app.hide_watermark.value | default: shop.metafields.loyalty_cashback_app.hide_watermark | json }}
   };
 
   (function() {
@@ -17,6 +21,32 @@
       const value = (cents / 100).toFixed(2);
       const symbol = window.LoyaltyCredit.currencySymbol || "$";
       return `${symbol}${value}`;
+    }
+
+    function getIconHtml(creditIcon) {
+      if (creditIcon === 'icon1') {
+        return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+          <path d="M12 7l1.8 3.6 4 .6-2.9 2.8.7 4-3.6-1.9-3.6 1.9.7-4-2.9-2.8 4-.6L12 7z" fill="#FFF" />
+        </svg>`;
+      } else if (creditIcon === 'icon3') {
+        return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+          <circle cx="12" cy="12" r="6" stroke="#FFF" stroke-width="2" fill="none" />
+        </svg>`;
+      } else if (creditIcon === 'icon4') {
+        return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="4" y="6" width="16" height="12" rx="2" stroke="#F59E0B" stroke-width="2.5" fill="none" />
+          <circle cx="16" cy="12" r="2" fill="#F59E0B" />
+        </svg>`;
+      } else if (creditIcon && (creditIcon.includes('http') || creditIcon.includes('data:image'))) {
+        return `<img src="${creditIcon}" alt="Loyalty Icon" style="width: 32px; height: 32px; object-fit: contain;">`;
+      } else {
+        return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="#F59E0B" />
+          <text x="12" y="16.5" fill="#FFF" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">$</text>
+        </svg>`;
+      }
     }
 
     async function updateCartDrawerCashback(container) {
@@ -76,12 +106,18 @@
         }
 
         const formatted = formatMoney(cashback_cents);
-        const rawMsg = window.LoyaltyCredit.msgCart || "You will get {loyalty_credit_amount} store credit after this purchase.";
-        const finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<strong>${formatted}</strong>`);
-        
         const contentEl = container.querySelector('.loyalty-credit-content');
-        if (contentEl && contentEl.innerHTML !== finalMsg) {
-          contentEl.innerHTML = finalMsg;
+        if (contentEl) {
+          const amountEl = contentEl.querySelector('.loyalty-credit-amount');
+          if (amountEl) {
+            if (amountEl.textContent !== formatted) {
+              amountEl.textContent = formatted;
+            }
+          } else {
+            const rawMsg = window.LoyaltyCredit.msgCart || "You will get {loyalty_credit_amount} store credit after this purchase.";
+            let finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<span class="loyalty-credit-amount">${formatted}</span>`);
+            contentEl.innerHTML = finalMsg;
+          }
         }
       } catch (e) {
         console.error("Loyalty Credit Error calculating cashback:", e);
@@ -140,11 +176,17 @@
       }
       
       const formatted = formatMoney(total_cashback_cents);
-      const finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<strong>${formatted}</strong>`);
-
       const contentEl = block.querySelector('.loyalty-credit-content');
-      if (contentEl && contentEl.innerHTML !== finalMsg) {
-        contentEl.innerHTML = finalMsg;
+      if (contentEl) {
+        const amountEl = contentEl.querySelector('.loyalty-credit-amount');
+        if (amountEl) {
+          if (amountEl.textContent !== formatted) {
+            amountEl.textContent = formatted;
+          }
+        } else {
+          let finalMsg = rawMsg.replace("{loyalty_credit_amount}", `<span class="loyalty-credit-amount">${formatted}</span>`);
+          contentEl.innerHTML = finalMsg;
+        }
       }
     }
 
@@ -422,29 +464,67 @@
       const drawerContent = document.querySelector(SELECTORS);
       if (drawerContent) {
         const parent = drawerContent.parentElement;
-        let existing = parent.querySelector('.loyalty-credit-drawer-injected');
+        let div = parent.querySelector('.loyalty-credit-drawer-injected');
         
-        if (!existing) {
+        if (!div) {
           if (!parent.querySelector('.loyalty-credit-block')) {
-            const div = document.createElement('div');
+            div = document.createElement('div');
             div.className = 'loyalty-credit-drawer-injected';
-            div.style = 'background-color: #FEFCE8; padding: 16px; border-radius: 8px; color: #333; margin: 15px; display: flex; align-items: center; gap: 15px; border: 1px solid #FEF08A; font-family: inherit; text-align: left;';
+            drawerContent.parentNode.insertBefore(div, drawerContent.nextSibling);
+          }
+        }
+
+        if (div) {
+          const bgColor = window.LoyaltyCredit.bgColor || '#FEFCE8';
+          const textColor = window.LoyaltyCredit.textColor || '#333333';
+          const creditIcon = window.LoyaltyCredit.creditIcon || 'icon2';
+          const hideWatermark = window.LoyaltyCredit.hideWatermark === 'true' || window.LoyaltyCredit.hideWatermark === true;
+
+          // Only apply styles and construct inner HTML if settings have changed or inner HTML is empty
+          if (div.dataset.bgColor !== bgColor || 
+              div.dataset.textColor !== textColor || 
+              div.dataset.creditIcon !== creditIcon || 
+              div.dataset.hideWatermark !== String(hideWatermark) ||
+              !div.innerHTML.trim()) {
+
+            div.dataset.bgColor = bgColor;
+            div.dataset.textColor = textColor;
+            div.dataset.creditIcon = creditIcon;
+            div.dataset.hideWatermark = String(hideWatermark);
+
+            // Apply container styles dynamically
+            div.style.backgroundColor = bgColor;
+            div.style.color = textColor;
+            div.style.padding = '16px';
+            div.style.borderRadius = '8px';
+            div.style.margin = '15px';
+            div.style.display = 'flex';
+            div.style.alignItems = 'center';
+            div.style.gap = '8px';
+            div.style.border = '1px solid rgba(0,0,0,0.08)';
+            div.style.fontFamily = 'inherit';
+            div.style.textAlign = 'left';
+            div.style.boxSizing = 'border-box';
+
+            const watermarkHtml = hideWatermark ? '' : `
+              <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">
+                Powered by <a href="https://getkoin.io" target="_blank" style="color: inherit; text-decoration: underline;">Getkoin.io</a>
+              </p>
+            `;
+
+            const expectedIconHtml = getIconHtml(creditIcon);
             div.innerHTML = `
-              <div style="background: #f1c40f; padding: 8px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" fill="white"/>
-                </svg>
+              <div class="loyalty-icon" style="display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px;">
+                ${expectedIconHtml}
               </div>
-              <div>
-                <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;"></p>
-                <p style="margin: 4px 0 0; font-size: 11px; opacity: 0.7; line-height: 1;">Powered by Loyalty Credit</p>
+              <div style="flex: 1;">
+                <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4; color: inherit;"></p>
+                ${watermarkHtml}
               </div>
             `;
-            drawerContent.parentNode.insertBefore(div, drawerContent.nextSibling);
-            debouncedCartUpdate(div);
           }
-        } else {
-          debouncedCartUpdate(existing);
+
+          debouncedCartUpdate(div);
         }
       }
     }

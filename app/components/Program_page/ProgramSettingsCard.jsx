@@ -1,4 +1,6 @@
 /* eslint-disable react/prop-types */
+import { ButtonGroup, Button } from "@shopify/polaris";
+
 export function ProgramSettingsCard({
   programType,
   setProgramType,
@@ -20,20 +22,20 @@ export function ProgramSettingsCard({
             <s-heading variant="headingSm">Program type</s-heading>
           </s-box>
           <s-stack padding="5" gap="base">
-            <s-stack direction="inline" gap="base">
-              <s-button
-                variant={programType === "order" ? "primary" : "tertiary"}
+            <ButtonGroup variant="segmented">
+              <Button
+                pressed={programType === "order"}
                 onClick={() => setProgramType("order")}
               >
                 Cashback by order
-              </s-button>
-              <s-button
-                variant={programType === "product" ? "primary" : "tertiary"}
+              </Button>
+              <Button
+                pressed={programType === "product"}
                 onClick={() => setProgramType("product")}
               >
                 Cashback by product
-              </s-button>
-            </s-stack>
+              </Button>
+            </ButtonGroup>
             <s-box paddingBlockStart="4">
               <s-paragraph color="subdued">
                 To avoid overuse or overlap, only one type of program can be
@@ -46,13 +48,13 @@ export function ProgramSettingsCard({
 
       {/* Program Settings */}
       <s-section>
-        <s-stack gap="base">
+        <s-stack gap="small" >
           <s-box padding="4">
             <s-heading variant="headingSm">Program settings</s-heading>
           </s-box>
           <s-stack gap="base">
-            <s-box padding="5">
-              <s-stack gap="tight">
+            <s-box padding="2">
+              <s-stack gap="base">
                 <s-box>
                   <s-stack direction="inline" gap="base" alignment="center">
                     <s-text color="subdued">

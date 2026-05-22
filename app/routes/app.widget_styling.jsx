@@ -11,7 +11,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Page } from "@shopify/polaris";
 
 export async function loader({ request }) {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
   const query = `#graphql
     query GetStylingMetafields {
@@ -418,7 +418,7 @@ export default function WidgetStyling() {
       </ui-save-bar>
 
       <s-box padding="5">
-        <s-grid gridTemplateColumns="2fr 1fr" gap="base" alignItems="start">
+        <s-grid gridTemplateColumns="1.5fr 1fr" gap="base" alignItems="start">
           {/* Left Column - Settings Panels */}
           <s-stack direction="block" gap="base">
             {/* Card 1 - Watermark Toggle */}
@@ -590,12 +590,14 @@ export default function WidgetStyling() {
                               reader.onload = (event) => {
                                 const img = new Image();
                                 img.onload = () => {
-                                  const canvas = document.createElement("canvas");
+                                  const canvas =
+                                    document.createElement("canvas");
                                   const ctx = canvas.getContext("2d");
                                   canvas.width = 64;
                                   canvas.height = 64;
                                   ctx.drawImage(img, 0, 0, 64, 64);
-                                  const compressedDataUrl = canvas.toDataURL("image/png");
+                                  const compressedDataUrl =
+                                    canvas.toDataURL("image/png");
                                   setCustomIconSrc(compressedDataUrl);
                                   setCreditIcon("custom");
                                 };

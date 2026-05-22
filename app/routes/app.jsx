@@ -8,8 +8,19 @@ import "@shopify/polaris/build/esm/styles.css";
 
 export const loader = async ({ request }) => {
   console.log("App Loader: Authenticating...");
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   console.log("App Loader: Authenticated for shop:", session.shop);
+
+  // Background check to process matured delayed store credits
+  try {
+    const { processDelayedCredits } = await import("../services/webhookProcessor.server");
+    // Run asynchronously without blocking loader response
+    processDelayedCredits(session.shop, admin).catch((err) =>
+      console.error("Error processing delayed credits in app loader:", err)
+    );
+  } catch (err) {
+    console.error("Failed to run processDelayedCredits in app loader:", err);
+  }
 
   // eslint-disable-next-line no-undef
   return {

@@ -12,12 +12,16 @@ automatically_update_urls_on_dev = true
 api_version = "2026-01"
 
   [[webhooks.subscriptions]]
-  topics = [ "orders/create", "customers/create", "orders/paid", "orders/fulfilled", "orders/updated" ]
+  topics = [
+  "orders/fulfilled",
+  "orders/create",
+  "customers/create"
+]
   uri = "/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,read_orders,write_orders,read_fulfillments,read_store_credit_accounts,write_products,write_store_credit_account_transactions"
+scopes = "read_customers,read_fulfillments,read_orders,read_store_credit_accounts,write_orders,write_products,write_store_credit_account_transactions"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]

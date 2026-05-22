@@ -1,6 +1,6 @@
 import { ActionFunctionArgs } from 'react-router';
 import db from '../db.server';
-import { authenticate, unauthenticated } from '../shopify.server';
+import { authenticate } from '../shopify.server';
 import { processOrderWebhook } from '../services/webhookProcessor.server';
 import { syncMongoStoreSession } from '../db.mongodb.server';
 
@@ -44,9 +44,8 @@ export const action = async ({
       break;
     }
 
-    case 'ORDERS_PAID':
-    case 'ORDERS_FULFILLED':
-    case 'ORDERS_UPDATED': {
+    case 'ORDERS_CREATE':
+    case 'ORDERS_FULFILLED': {
       console.log(`=== [Webhook Received] ${topic} ===`);
       console.log('Shop:', shop);
 

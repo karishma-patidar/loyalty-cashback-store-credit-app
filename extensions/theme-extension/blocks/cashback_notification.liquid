@@ -1,10 +1,18 @@
-{% render 'store_credit' %}
+
+{% assign pending_msg = shop.metafields.loyalty_cashback_app.widget_pending_msg.value | default: "Free shipping on all orders." %}
+{% assign pending_amount = shop.metafields.loyalty_cashback_app.pending_cashback.value | default: "₹0.00" %}
+{% if pending_msg and pending_amount %}
+  {% assign heading = pending_msg | replace: '{amount}', pending_amount %}
+{% else %}
+  {% assign heading = "Free shipping on all orders." %}
+{% endif %}
+<s-banner heading="{{ heading }}" tone="info"></s-banner>
 
 {% schema %}
 {
   "name": "Cashback Notification",
   "target": "section",
-  "templates": ["customers/order", "cart", "product", "index", "page"],
+  "templates": ["customers/order"],
   "settings": []
 }
 {% endschema %}

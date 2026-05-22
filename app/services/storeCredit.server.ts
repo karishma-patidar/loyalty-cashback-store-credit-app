@@ -28,9 +28,12 @@ export interface ProgramSettings {
   channels?: { online: boolean; pos: boolean; draft: boolean };
   eligibility?: { d2c: boolean; b2b: boolean };
   cashbackPercentage?: number;
+  notifyEmail?: boolean;
 }
 
 export interface ShopifyOrderPayload {
+  id?: number | string;
+  name?: string;
   line_items?: Array<{
     price?: string;
     quantity?: number | string;
@@ -39,6 +42,9 @@ export interface ShopifyOrderPayload {
   currency?: string;
   customer?: {
     id?: number | string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
   };
 }
 
@@ -88,8 +94,10 @@ export async function addStoreCredit(
       }
     `;
     
+    console.log("GraphQL Request [getCustomerStoreCreditAccount] variables:", { id: customerId });
     const accountRes = await admin.graphql(getAccountQuery, { variables: { id: customerId } });
     const accountData = await accountRes.json();
+    console.log("GraphQL Response [getCustomerStoreCreditAccount]:", JSON.stringify(accountData, null, 2));
     let storeCreditAccountId = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
 
     // 2. If no account exists, create one
@@ -108,15 +116,18 @@ export async function addStoreCredit(
           }
         }
       `;
-      const createRes = await admin.graphql(createAccountMutation, {
-        variables: {
-          storeCreditAccount: {
-            ownerId: customerId,
-            currency: currencyCode
-          }
+      const createVars = {
+        storeCreditAccount: {
+          ownerId: customerId,
+          currency: currencyCode
         }
+      };
+      console.log("GraphQL Request [storeCreditAccountCreate] variables:", createVars);
+      const createRes = await admin.graphql(createAccountMutation, {
+        variables: createVars
       });
       const createData = await createRes.json();
+      console.log("GraphQL Response [storeCreditAccountCreate]:", JSON.stringify(createData, null, 2));
       storeCreditAccountId = createData?.data?.storeCreditAccountCreate?.storeCreditAccount?.id;
 
       if (!storeCreditAccountId) {
@@ -160,22 +171,26 @@ export async function addStoreCredit(
     let result;
     let emailUnsupported = false;
 
+    const creditVars = {
+      id: storeCreditAccountId,
+      creditInput: {
+        creditAmount: {
+          amount: String(amount),
+          currencyCode,
+        },
+        notify: notifyCustomer,
+        ...(expiresAt ? { expiresAt } : {}),
+      },
+    };
+    console.log("GraphQL Request [storeCreditAccountCredit] variables:", creditVars);
+
     try {
       const response = await admin.graphql(query, {
-        variables: {
-          id: storeCreditAccountId,
-          creditInput: {
-            creditAmount: {
-              amount: String(amount),
-              currencyCode,
-            },
-            notify: notifyCustomer,
-            ...(expiresAt ? { expiresAt } : {}),
-          },
-        },
+        variables: creditVars,
       });
 
       const data = await response.json();
+      console.log("GraphQL Response [storeCreditAccountCredit]:", JSON.stringify(data, null, 2));
       result = data?.data?.storeCreditAccountCredit;
     } catch (graphqlError: any) {
       const errMsg = String(graphqlError.message || graphqlError);
@@ -186,21 +201,25 @@ export async function addStoreCredit(
         console.warn("[⚠️] Shopify API version does not support 'notify' field. Retrying credit addition without notify...");
         emailUnsupported = true;
 
+        const retryVars = {
+          id: storeCreditAccountId,
+          creditInput: {
+            creditAmount: {
+              amount: String(amount),
+              currencyCode,
+            },
+            ...(expiresAt ? { expiresAt } : {}),
+          },
+        };
+        console.log("GraphQL Retry Request [storeCreditAccountCredit] variables:", retryVars);
+
         try {
           const responseRetry = await admin.graphql(query, {
-            variables: {
-              id: storeCreditAccountId,
-              creditInput: {
-                creditAmount: {
-                  amount: String(amount),
-                  currencyCode,
-                },
-                ...(expiresAt ? { expiresAt } : {}),
-              },
-            },
+            variables: retryVars,
           });
 
           const dataRetry = await responseRetry.json();
+          console.log("GraphQL Retry Response [storeCreditAccountCredit]:", JSON.stringify(dataRetry, null, 2));
           result = dataRetry?.data?.storeCreditAccountCredit;
         } catch (retryError) {
           console.error("❌ Retry Store Credit Error:", retryError);
@@ -215,11 +234,6 @@ export async function addStoreCredit(
     if (result) {
       result.emailUnsupported = emailUnsupported;
     }
-
-    console.log(
-      "✅ Store Credit Response:",
-      JSON.stringify(result, null, 2)
-    );
 
     if (result?.userErrors && result.userErrors.length > 0) {
       console.log("❌ GraphQL User Errors:", result.userErrors);

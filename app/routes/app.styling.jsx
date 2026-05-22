@@ -558,12 +558,14 @@ export default function StylingPage() {
                               reader.onload = (event) => {
                                 const img = new Image();
                                 img.onload = () => {
-                                  const canvas = document.createElement("canvas");
+                                  const canvas =
+                                    document.createElement("canvas");
                                   const ctx = canvas.getContext("2d");
                                   canvas.width = 64;
                                   canvas.height = 64;
                                   ctx.drawImage(img, 0, 0, 64, 64);
-                                  const compressedDataUrl = canvas.toDataURL("image/png");
+                                  const compressedDataUrl =
+                                    canvas.toDataURL("image/png");
                                   setCustomIconSrc(compressedDataUrl);
                                   setCreditIcon("custom");
                                 };

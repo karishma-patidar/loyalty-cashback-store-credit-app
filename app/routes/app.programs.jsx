@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useNavigate,
   useSearchParams,
@@ -9,8 +9,17 @@ import {
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { getShopPrograms, setShopPrograms, deleteShopPrograms } from "../services/graphql.server";
+import {
+  getShopPrograms,
+  setShopPrograms,
+  deleteShopPrograms,
+} from "../services/graphql.server";
 import connectMongoDB, { getShopModel } from "../db.mongodb.server";
+import {
+  IndexFilters,
+  useSetIndexFiltersMode,
+  IndexFiltersMode,
+} from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -22,7 +31,7 @@ export const loader = async ({ request }) => {
   try {
     const ShopModel = getShopModel(session.shop);
     const docs = await ShopModel.find({});
-    
+
     // Process each program to assign its dynamic issued amount
     for (const prog of programs) {
       let totalIssued = 0;
@@ -83,12 +92,22 @@ export const action = async ({ request }) => {
       });
 
       await setShopPrograms(admin, shopId, updatedPrograms);
-      return Response.json({ success: true, actionType: "toggleStatus", id, status: newStatus });
+      return Response.json({
+        success: true,
+        actionType: "toggleStatus",
+        id,
+        status: newStatus,
+      });
     }
 
     return Response.json({ success: false, error: "Invalid action" });
   } catch (error) {
-    return Response.json({ success: false, actionType, id, error: error.message });
+    return Response.json({
+      success: false,
+      actionType,
+      id,
+      error: error.message,
+    });
   }
 };
 
@@ -140,15 +159,21 @@ export default function Programs() {
   }, [loaderData]);
 
   const [activeTab, setActiveTab] = useState("All");
-  const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const searchInputRef = useRef(null);
+  const { mode, setMode } = useSetIndexFiltersMode();
 
-  useEffect(() => {
-    if (isSearching && searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  }, [isSearching]);
+  const handleFiltersCancel = useCallback(() => {
+    setMode(IndexFiltersMode.Default);
+  }, [setMode]);
+
+  const tabs = ["All", "Active", "Cashback", "Custom Program"].map((item, index) => ({
+    content: item,
+    index,
+    onAction: () => { },
+    id: `${item}-${index}`,
+  }));
+
+  const activeTabIdx = ["All", "Active", "Cashback", "Custom Program"].indexOf(activeTab);
 
   const filteredPrograms = programs.filter((prog) => {
     const matchesSearch =
@@ -260,7 +285,7 @@ export default function Programs() {
   }
 
   return (
-    <s-box background="subdued" className="min-h-screen">
+    <s-box className="min-h-screen">
       <s-page>
         <s-stack gap="base">
           {/* Header Row */}
@@ -289,79 +314,52 @@ export default function Programs() {
           <s-box
             background="surface"
             borderWidth="base"
-            borderRadius="base"
             className="shadow-sm border-gray-200 overflow-hidden"
           >
             {/* Tabs & Search Row */}
-            <s-box>
-              {isSearching ? (
-                <s-box>
-                  <s-text-field
-                    ref={searchInputRef}
-                    placeholder="Search by program name"
-                    value={searchQuery}
-                    onInput={(e) => setSearchQuery(e.target.value)}
-                    prefix="search"
-                    className="flex-1"
-                  />
-                  <s-button
-                    variant="tertiary"
-                    onClick={() => {
-                      setIsSearching(false);
-                      setSearchQuery("");
-                    }}
-                    className="font-bold text-gray-500"
-                  >
-                    Cancel
-                  </s-button>
-                </s-box>
-              ) : (
-                <>
-                  <s-stack direction="inline" gap="0">
-                    {["All", "Active", "Cashback", "Custom Program"].map(
-                      (tab) => (
-                        <s-button
-                          key={tab}
-                          variant="tertiary"
-                          className={`px-5 py-3 text-[13px] font-medium rounded-none transition-all ${activeTab === tab ? "bg-gray-100 text-black" : "text-gray-500 hover:bg-gray-50"}`}
-                          onClick={() => setActiveTab(tab)}
-                        >
-                          {tab}
-                        </s-button>
-                      ),
-                    )}
-                  </s-stack>
-                  <s-button
-                    variant="tertiary"
-                    icon="search"
-                    onClick={() => setIsSearching(true)}
-                    className="mr-2"
-                  />
-                </>
-              )}
-            </s-box>
+            <IndexFilters
+              queryValue={searchQuery}
+              queryPlaceholder="Search by program name"
+              onQueryChange={setSearchQuery}
+              onQueryClear={() => setSearchQuery("")}
+              tabs={tabs}
+              selected={activeTabIdx}
+              onSelect={(index) => setActiveTab(tabs[index].content)}
+              filters={[]}
+              appliedFilters={[]}
+              onClearAll={() => { }}
+              cancelAction={{
+                onAction: handleFiltersCancel,
+              }}
+              mode={mode}
+              setMode={setMode}
+              canCreateNewView={false}
+            />
 
             {filteredPrograms.length === 0 ? (
-              <s-box
-                padding="12"
-                className="flex flex-col items-center justify-center text-center py-20"
-              >
-                <s-icon
-                  type="search"
-                  size="large"
-                  color="subdued"
-                  className="opacity-40"
-                />
-                <s-heading
-                  variant="headingMd"
-                  className="mt-4 font-bold text-[18px]"
-                >
+              <div style={{ background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '80px 20px' }}>
+                <div style={{ opacity: 0.4, color: 'var(--p-color-icon-secondary)', marginBottom: '16px' }}>
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="48"
+                    height="48"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                  </svg>
+                </div>
+                <h2 style={{ fontSize: '16px', fontWeight: '600', color: 'var(--p-color-text)', margin: '0 0 8px 0' }}>
                   No Items found
-                </s-heading>
-                <s-paragraph color="subdued" className="text-[14px]">
+                </h2>
+                <p style={{ fontSize: '13px', color: 'var(--p-color-text-secondary)', margin: 0 }}>
                   Try changing the filters or search term
-                </s-paragraph>
-              </s-box>
+                </p>
+              </div>
             ) : (
               <s-section padding="none">
                 <s-table>

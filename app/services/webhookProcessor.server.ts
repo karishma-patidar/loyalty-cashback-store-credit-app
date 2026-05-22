@@ -4,15 +4,17 @@ import {
   addStoreCredit,
   calculateCashbackAmount,
   calculateExpirationDate,
+  AdminClient,
+  ShopifyOrderPayload,
 } from './storeCredit.server';
 import { connectMongoDB, getCustomerModel } from '../db.mongodb.server';
 
 /**
  * Centralized order webhook handler to process order-based store credit rewards.
  * Supports both ORDERS_CREATE (creates unpaid orders with "Pending" status)
- * and ORDERS_PAID (issues store credit, saves with "Completed" status).
+ * and ORDERS_FULFILLED (issues store credit, saves with "Completed" status).
  */
-export async function processOrderWebhook(shop: string, admin: any, orderPayload: any, topic: string) {
+export async function processOrderWebhook(shop: string, admin: AdminClient | undefined, orderPayload: ShopifyOrderPayload, topic: string) {
   const numericCustomerId = orderPayload?.customer?.id;
   if (!numericCustomerId) {
     console.log('❌ No customer ID found in order');
@@ -38,6 +40,11 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
     console.log('❌ No admin client available to process webhook');
     return;
   }
+
+  // Trigger background check for matured delayed credits whenever any webhook is processed
+  processDelayedCredits(shop, adminClient).catch(err => {
+    console.error("❌ Error processing delayed credits during webhook:", err);
+  });
 
   // 1. Check if app is active
   const appActiveQuery = `#graphql
@@ -83,8 +90,6 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
     return;
   }
 
-  const currencyCode = orderPayload?.currency || 'USD';
-  const expiresAt = calculateExpirationDate(program);
   const customerName = `${orderPayload?.customer?.first_name || ""} ${orderPayload?.customer?.last_name || ""}`.trim() || "Anonymous Customer";
 
   // 4. Database actions
@@ -96,6 +101,10 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
   }
 
   const ShopModel = getCustomerModel(shop);
+  if (!ShopModel) {
+    console.error("❌ ShopModel could not be initialized");
+    return;
+  }
   const todayStr = new Date().toISOString().split("T")[0];
 
   // Check existing transaction
@@ -105,8 +114,8 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
     existingTx = existingDoc.events.find((e: any) => e.orderId === orderId);
   }
 
-  // Handle Order Payment -> Save as PENDING (only once, on ORDERS_PAID)
-  if (topic === 'ORDERS_PAID') {
+  // Handle Order Creation -> Save as PENDING (only once, on ORDERS_CREATE)
+  if (topic === 'ORDERS_CREATE') {
     // existingTx check already guards against duplicate across all date documents
     if (existingTx) {
       console.log(`[-] Order ${orderName} already in DB (${existingTx.status}). Skipping duplicate.`);
@@ -158,14 +167,14 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
       console.log(`🎉 Order ${orderName} saved as PENDING in MongoDB.`);
     }
   } 
-  // Handle Fulfillment / Updates -> Mark as COMPLETED and Issue Credit
-  else if (topic === 'ORDERS_FULFILLED' || topic === 'ORDERS_UPDATED') {
+  // Handle Fulfillment -> Mark as COMPLETED and Issue Credit
+  else if (topic === 'ORDERS_FULFILLED') {
     if (existingTx && existingTx.status === "Completed") {
       console.log(`[-] Order ${orderName} is already Completed. Skipping.`);
       return;
     }
 
-    console.log(`[~] Fulfillment/Update event detected for ${orderName}. Fetching full order details...`);
+    console.log(`[~] Fulfillment event detected for ${orderName}. Fetching full order details...`);
 
     // Fetch full order details via GraphQL to ensure accurate status and price info
     const getOrderQuery = `#graphql
@@ -232,7 +241,14 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
     const mappedOrder = {
       current_total_price: fullOrder.currentTotalPriceSet?.presentmentMoney?.amount,
       currency: fullOrder.currentTotalPriceSet?.presentmentMoney?.currencyCode,
-      line_items: fullOrder.lineItems?.nodes?.map((node: any) => ({
+      line_items: fullOrder.lineItems?.nodes?.map((node: {
+        discountedUnitPriceSet?: {
+          presentmentMoney?: {
+            amount?: string;
+          };
+        };
+        quantity?: number;
+      }) => ({
         price: node.discountedUnitPriceSet?.presentmentMoney?.amount,
         quantity: node.quantity
       }))
@@ -273,6 +289,76 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
     } else {
       computedEmailStatus = "Not Sent";
       computedEmailFailReason = "Metafield notifyEmail setting is disabled";
+    }
+
+    // Check if delayed credit is enabled
+    const delayDaysNum = parseInt(program.delayDays || "0", 10);
+    const hasDelay = !!program.enableDelay && delayDaysNum > 0;
+
+    if (hasDelay) {
+      const processAt = new Date();
+      processAt.setDate(processAt.getDate() + delayDaysNum);
+      
+      console.log(`[+] Delay enabled (${delayDaysNum} days). Scheduling order ${orderName} to be processed at ${processAt.toISOString()}...`);
+
+      if (existingDoc && existingTx) {
+        if (existingTx.processAt) {
+          console.log(`[-] Order ${orderName} already scheduled for delay. Skipping rescheduling.`);
+          return;
+        }
+
+        await ShopModel.updateOne(
+          { _id: existingDoc._id, "events.orderId": orderId },
+          {
+            $set: {
+              "events.$.status": "Pending",
+              "events.$.amount": cashbackAmount,
+              "events.$.emailStatus": "Not Sent",
+              "events.$.emailFailReason": "",
+              "events.$.processAt": processAt,
+              "events.$.expiresAt": expiresAt,
+              "events.$.shouldNotify": shouldNotify,
+            }
+          }
+        );
+        console.log(`🎉 Scheduled existing order ${orderName} for delay in MongoDB.`);
+      } else {
+        const newEvent = {
+          shop,
+          orderId,
+          orderName,
+          customerId,
+          customerName,
+          amount: cashbackAmount,
+          currency: currencyCode,
+          status: "Pending",
+          emailStatus: "Not Sent",
+          type: program.programType === "product" ? "Custom Program" : "Cashback",
+          issuedAt: null,
+          processAt: processAt,
+          expiresAt: expiresAt,
+          shouldNotify: shouldNotify,
+          createdAt: new Date(),
+        };
+
+        const updateResult = await ShopModel.updateOne(
+          { date: todayStr, "events.orderId": { $ne: orderId } },
+          { $push: { events: newEvent } }
+        );
+
+        if (updateResult.matchedCount === 0) {
+          const dateDoc = await ShopModel.findOne({ date: todayStr });
+          if (!dateDoc) {
+            try {
+              await ShopModel.create({ date: todayStr, events: [newEvent] });
+            } catch (err) {
+              console.error("❌ Failed to create scheduled date doc:", err);
+            }
+          }
+        }
+        console.log(`🎉 Scheduled new order ${orderName} for delay in MongoDB.`);
+      }
+      return;
     }
 
     const storeCreditResult = await addStoreCredit(
@@ -339,7 +425,9 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
           if (!dateDoc) {
             try {
               await ShopModel.create({ date: todayStr, events: [newEvent] });
-            } catch (err) {}
+            } catch (err) {
+              console.error("❌ Failed to create fallback completed date doc:", err);
+            }
           }
         }
         console.log(`🎉 Saved new COMPLETED transaction for order ${orderName} with emailStatus: ${finalEmailStatus} in MongoDB.`);
@@ -417,5 +505,150 @@ export async function processOrderWebhook(shop: string, admin: any, orderPayload
         }
       }
     }
+  }
+}
+
+/**
+ * Periodically processes matured delayed credits.
+ * Queries MongoDB for any Pending events where processAt <= now.
+ */
+export async function processDelayedCredits(shop: string, adminClient: AdminClient) {
+  try {
+    await connectMongoDB();
+    const ShopModel = getCustomerModel(shop);
+    if (!ShopModel) {
+      console.error("❌ ShopModel could not be initialized for delayed credits");
+      return;
+    }
+
+    const now = new Date();
+    // Find documents containing events with status "Pending" and processAt <= now
+    const docs = await ShopModel.find({
+      "events": {
+        $elemMatch: {
+          status: "Pending",
+          processAt: { $lte: now }
+        }
+      }
+    });
+
+    if (!docs || docs.length === 0) {
+      return;
+    }
+
+    console.log(`[~] Found ${docs.length} date documents containing matured delayed credits for ${shop}`);
+
+    // Fetch active program settings for configuration
+    const programs = await getShopPrograms(adminClient);
+    if (!programs || programs.length === 0) {
+      console.log('[-] Aborted delayed processing: No loyalty programs configured.');
+      return;
+    }
+    const program = programs[0];
+
+    for (const doc of docs) {
+      for (const ev of doc.events) {
+        if (ev.status === "Pending" && ev.processAt && ev.processAt <= now) {
+          console.log(`[+] Processing delayed credit for Order ${ev.orderName} (${ev.orderId})`);
+
+          const expiresAt = ev.expiresAt ? ev.expiresAt.toISOString() : calculateExpirationDate(program);
+          const shouldNotify = ev.shouldNotify !== undefined ? ev.shouldNotify : !!program.notifyEmail;
+
+          const storeCreditResult = await addStoreCredit(
+            adminClient,
+            ev.customerId,
+            ev.amount,
+            ev.currency || 'USD',
+            expiresAt,
+            shouldNotify
+          );
+
+          const isSuccessful = storeCreditResult && 
+                             (!storeCreditResult.userErrors || storeCreditResult.userErrors.length === 0) && 
+                             storeCreditResult.storeCreditAccountTransaction;
+
+          if (isSuccessful) {
+            let finalEmailStatus = ev.emailStatus || "Not Sent";
+            let finalEmailFailReason = ev.emailFailReason || "";
+
+            if (program.notifyEmail) {
+              if (storeCreditResult.emailUnsupported) {
+                finalEmailStatus = "Failed";
+                finalEmailFailReason = "Shopify API version does not support native email notifications";
+              } else {
+                finalEmailStatus = "Sent";
+              }
+            }
+
+            // Update MongoDB status to Completed
+            await ShopModel.updateOne(
+              { _id: doc._id, "events.orderId": ev.orderId },
+              {
+                $set: {
+                  "events.$.status": "Completed",
+                  "events.$.emailStatus": finalEmailStatus,
+                  "events.$.emailFailReason": finalEmailFailReason,
+                  "events.$.issuedAt": new Date(),
+                }
+              }
+            );
+            console.log(`🎉 [Delayed] Updated order ${ev.orderName} to COMPLETED in MongoDB.`);
+
+            // Also update the order note in Shopify
+            try {
+              const orderUpdateMutation = `#graphql
+                mutation OrderUpdate($input: OrderInput!) {
+                  orderUpdate(input: $input) {
+                    order { id note }
+                  }
+                }
+              `;
+              const appNote = `[Loyalty App] Issued ${ev.amount} ${ev.currency || 'USD'} store credit (Delayed).`;
+              
+              const getOrderNoteQuery = `#graphql
+                query getOrderNote($id: ID!) {
+                  order(id: $id) {
+                    id
+                    note
+                  }
+                }
+              `;
+              const orderGid = ev.orderId.startsWith("gid://") ? ev.orderId : `gid://shopify/Order/${ev.orderId}`;
+              const noteRes = await adminClient.graphql(getOrderNoteQuery, { variables: { id: orderGid } });
+              const noteData = await noteRes.json();
+              const currentNote = noteData?.data?.order?.note || "";
+
+              if (!currentNote.includes(appNote)) {
+                await adminClient.graphql(orderUpdateMutation, {
+                  variables: {
+                    input: { id: orderGid, note: currentNote ? `${currentNote}\n${appNote}` : appNote }
+                  }
+                });
+                console.log(`✅ [Delayed] Updated Shopify Order Note for ${ev.orderName}`);
+              }
+            } catch (noteErr) {
+              console.error(`⚠️ [Delayed] Failed to update order note for ${ev.orderName}:`, noteErr);
+            }
+          } else {
+            const errorMsg = storeCreditResult?.userErrors?.map((e: any) => e.message).join(", ") || "Failed to add store credit";
+            console.log(`❌ [Delayed] Store credit issue failed for ${ev.orderName}. Error: ${errorMsg}`);
+            
+            await ShopModel.updateOne(
+              { _id: doc._id, "events.orderId": ev.orderId },
+              {
+                $set: {
+                  "events.$.status": "Failed",
+                  "events.$.emailStatus": "Failed",
+                  "events.$.emailFailReason": errorMsg,
+                  "events.$.issuedAt": new Date(),
+                }
+              }
+            );
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error processing delayed credits:", error);
   }
 }
