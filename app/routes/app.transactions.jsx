@@ -20,6 +20,7 @@ import {
   Badge,
   useSetIndexFiltersMode,
   IndexFiltersMode,
+  SkeletonDisplayText,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import connectMongoDB, {
@@ -364,8 +365,8 @@ export default function Transactions() {
   const navigation = useNavigation();
 
   const [searchVal, setSearchVal] = useState(searchQuery);
-  const [sortSelected, setSortSelected] = useState(["newest"]);
-  const sortValue = sortSelected[0] || "newest";
+  const [sortSelected, setSortSelected] = useState(["date desc"]);
+  const sortValue = sortSelected[0] || "date desc";
 
   const [filterStatus, setFilterStatus] = useState([]); // array of active statuses, e.g. ["Completed", "Pending"]
   const [filterDate, setFilterDate] = useState("all"); // "all", "today", "yesterday", "7days", "30days"
@@ -386,13 +387,17 @@ export default function Transactions() {
 
   // Compute sorted transactions array dynamically on the client-side
   const sortedTransactions = [...transactions].sort((a, b) => {
-    if (sortValue === "newest") {
+    if (sortValue === "date desc") {
+      // Newest first
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    } else if (sortValue === "oldest") {
+    } else if (sortValue === "date asc") {
+      // Oldest first
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    } else if (sortValue === "amount-high") {
+    } else if (sortValue === "amount desc") {
+      // High to low
       return Number(b.amount || 0) - Number(a.amount || 0);
-    } else if (sortValue === "amount-low") {
+    } else if (sortValue === "amount asc") {
+      // Low to high
       return Number(a.amount || 0) - Number(b.amount || 0);
     }
     return 0;
@@ -499,9 +504,6 @@ export default function Transactions() {
   useEffect(() => {
     if (navigation.state === "idle" && isRefreshing) {
       setIsRefreshing(false);
-      if (typeof window !== "undefined" && window.shopify) {
-        window.shopify.toast.show("Transactions list refreshed successfully");
-      }
     }
   }, [navigation.state, isRefreshing]);
 
@@ -510,9 +512,6 @@ export default function Transactions() {
     const params = new URLSearchParams();
     params.set("tab", String(activeTabId));
     submit(params, { method: "get", replace: true });
-    if (typeof window !== "undefined" && window.shopify) {
-      window.shopify.toast.show("Refreshing transactions...");
-    }
   }, [activeTabId, submit]);
 
   const shopSubdomain = shop ? shop.split(".")[0] : "";
@@ -656,6 +655,45 @@ export default function Transactions() {
     },
   );
 
+  const isLoading = navigation.state === "loading" || isRefreshing;
+
+  const skeletonRows = Array.from({ length: paginatedTransactions.length > 0 ? paginatedTransactions.length : 5 }).map(
+    (_, index) => (
+      <IndexTable.Row
+        id={`skeleton-row-${index}`}
+        key={`skeleton-row-${index}`}
+        position={index}
+      >
+        <IndexTable.Cell>
+          <div style={{ padding: "4px 0" }}>
+            <SkeletonDisplayText size="small" />
+          </div>
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+        <IndexTable.Cell>
+          <SkeletonDisplayText size="small" />
+        </IndexTable.Cell>
+      </IndexTable.Row>
+    ),
+  );
+
   const dateRangeChoices = [
     { label: "All", value: "all" },
     { label: "Today", value: "today" },
@@ -737,11 +775,13 @@ export default function Transactions() {
   const handleQueryValueChange = useCallback((value) => setSearchVal(value), []);
   const handleQueryValueRemove = useCallback(() => setSearchVal(""), []);
 
+  // Polaris IndexFilters requires sort values in "field direction" format
+  // (split by space internally to determine which arrow to highlight)
   const sortOptions = [
-    { label: "Date (newest first)", value: "newest", directionLabel: "Newest first" },
-    { label: "Date (oldest first)", value: "oldest", directionLabel: "Oldest first" },
-    { label: "Amount (high to low)", value: "amount-high", directionLabel: "High to low" },
-    { label: "Amount (low to high)", value: "amount-low", directionLabel: "Low to high" },
+    { label: "Creation date",        value: "date desc",    directionLabel: "Newest to oldest" },
+    { label: "Creation date",        value: "date asc",     directionLabel: "Oldest to newest" },
+    { label: "Store credit amount",  value: "amount desc",  directionLabel: "Highest to lowest" },
+    { label: "Store credit amount",  value: "amount asc",   directionLabel: "Lowest to highest" },
   ];
 
   const handleSortChange = useCallback((value) => {
@@ -757,9 +797,10 @@ export default function Transactions() {
     <Page
       title="Transactions"
       primaryAction={{
-        content: "Refresh Data",
+        content: isLoading ? "Refreshing..." : "Refresh Data",
         onAction: handleRefresh,
-        loading: isRefreshing,
+        disabled: isLoading,
+        loading: isLoading,
       }}
     >
       <style>{`
@@ -798,7 +839,7 @@ export default function Transactions() {
                   sortOptions={sortOptions}
                   sortSelected={sortSelected}
                   queryValue={searchVal}
-                  queryPlaceholder="Search by customer or company location"
+                  queryPlaceholder="Search by Order ID or Customer Name"
                   onQueryChange={handleQueryValueChange}
                   onQueryClear={handleQueryValueRemove}
                   onSort={handleSortChange}
