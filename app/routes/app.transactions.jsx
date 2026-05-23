@@ -482,7 +482,7 @@ export default function Transactions() {
 
   const tabs = [
     { id: "0", content: "Cashback Program", index: 0 },
-    { id: "1", content: "Custom Program", index: 1 },
+    // { id: "1", content: "Custom Program", index: 1 },
   ];
 
   const handleTabChange = useCallback(
@@ -977,15 +977,15 @@ export default function Transactions() {
                   },
                   ...(selectedTransaction.emailFailReason
                     ? [
-                        {
-                          term: "Notification Issue Reason",
-                          description: (
-                            <Text variant="bodyMd" tone="critical">
-                              {selectedTransaction.emailFailReason}
-                            </Text>
-                          ),
-                        },
-                      ]
+                      {
+                        term: "Notification Issue Reason",
+                        description: (
+                          <Text variant="bodyMd" tone="critical">
+                            {selectedTransaction.emailFailReason}
+                          </Text>
+                        ),
+                      },
+                    ]
                     : []),
                 ]}
               />

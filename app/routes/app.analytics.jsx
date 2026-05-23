@@ -4,7 +4,6 @@ import {
     Page,
     Layout,
     Card,
-    Grid,
     BlockStack,
     InlineStack,
     Text,
@@ -14,11 +13,17 @@ import {
     Button,
     Popover,
     Tooltip,
+    Grid,
+    Badge,
+    Spinner,
+    SkeletonBodyText,
+    SkeletonDisplayText,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import connectMongoDB, { getShopModel } from "../db.mongodb.server";
 
-// Define GraphQL queries
+// ─── GraphQL Queries ───────────────────────────────────────────────────────────
+
 const GET_STORE_CURRENCY = `#graphql
   query GetStoreCurrency {
     shop {
@@ -45,7 +50,7 @@ const GET_ORDERS_QUERY = `#graphql
 
 const GET_TRANSACTIONS_QUERY = `#graphql
   query GetStoreCreditTransactions {
-    storeCreditAccountTransactions(first: 100) {
+    storeCreditAccountTransactions {
       edges {
         node {
           id
@@ -76,7 +81,8 @@ const GET_TRANSACTIONS_QUERY = `#graphql
   }
 `;
 
-// Helper to format date range
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
 function calculateDateRange(preset, startDateStr, endDateStr) {
     const now = new Date();
     let start = new Date();
@@ -109,7 +115,6 @@ function calculateDateRange(preset, startDateStr, endDateStr) {
             end.setHours(23, 59, 59, 999);
         }
     } else {
-        // Default to today
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
     }
@@ -117,7 +122,6 @@ function calculateDateRange(preset, startDateStr, endDateStr) {
     return { start, end };
 }
 
-// Helper to format currency values
 const currencySymbols = {
     INR: "₹",
     USD: "$",
@@ -136,7 +140,8 @@ function formatCurrency(amount, currencyCode) {
     })}`;
 }
 
-// Tooltip texts
+// ─── Tooltip texts ─────────────────────────────────────────────────────────────
+
 const TOOLTIPS = {
     issuedCredit: "The total value of loyalty cashback credits issued from reward programs and manual adjustments, excluding refunded or debited credits.",
     appliedCredit: "The total value of loyalty cashback credits redeemed and applied to customer orders.",
@@ -150,44 +155,38 @@ const TOOLTIPS = {
     totalDistributedLocations: "Number of company locations where cashback credits were distributed.",
 };
 
-// Inline SVG Icons
-const InfoIcon = () => (
-    <span className="info-icon-wrapper">
-        <svg viewBox="0 0 20 20" className="info-icon-svg" fill="currentColor">
-            <path fillRule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v.2c0 .414-.336.75-.75.75a.75.75 0 0 1-.75-.75v-.2A.75.75 0 0 1 10 5Zm0 3.75a.75.75 0 0 1 .75.75v4.75a.75.75 0 0 1-1.5 0v-4.75A.75.75 0 0 1 10 8.75Z" clipRule="evenodd" />
-        </svg>
-    </span>
-);
+// ─── Inline SVG Icons ──────────────────────────────────────────────────────────
 
 const CalendarIcon = () => (
-    <span className="calendar-icon-wrapper">
-        <svg viewBox="0 0 20 20" className="calendar-icon-svg" fill="currentColor">
-            <path fillRule="evenodd" d="M6.5 2a.75.75 0 0 1 .75.75V4h5.5V2.75a.75.75 0 0 1 1.5 0V4h1.25A2.5 2.5 0 0 1 18 6.5v9A2.5 2.5 0 0 1 15.5 18h-11A2.5 2.5 0 0 1 2 15.5v-9A2.5 2.5 0 0 1 4.5 4H5.75V2.75A.75.75 0 0 1 6.5 2Zm10 7.5h-13v6a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-6ZM5.75 5.5v.75a.75.75 0 0 1-1.5 0V5.5H4.5A1 1 0 0 0 3.5 6.5V8h13V6.5a1 1 0 0 0-1-1h-.25v.75a.75.75 0 0 1-1.5 0V5.5H5.75Z" clipRule="evenodd" />
-        </svg>
-    </span>
+    <svg
+        viewBox="0 0 20 20"
+        fill="currentColor"
+        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}
+    >
+        <path
+            fillRule="evenodd"
+            d="M6.5 2a.75.75 0 0 1 .75.75V4h5.5V2.75a.75.75 0 0 1 1.5 0V4h1.25A2.5 2.5 0 0 1 18 6.5v9A2.5 2.5 0 0 1 15.5 18h-11A2.5 2.5 0 0 1 2 15.5v-9A2.5 2.5 0 0 1 4.5 4H5.75V2.75A.75.75 0 0 1 6.5 2Zm10 7.5h-13v6a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-6ZM5.75 5.5v.75a.75.75 0 0 1-1.5 0V5.5H4.5A1 1 0 0 0 3.5 6.5V8h13V6.5a1 1 0 0 0-1-1h-.25v.75a.75.75 0 0 1-1.5 0V5.5H5.75Z"
+            clipRule="evenodd"
+        />
+    </svg>
 );
 
-// Loader implementation
+// ─── Loader ────────────────────────────────────────────────────────────────────
+
 export const loader = async ({ request }) => {
     const { admin, session } = await authenticate.admin(request);
     const shop = session.shop;
 
-    // Parse parameters
     const url = new URL(request.url);
     const preset = url.searchParams.get("preset") || "today";
     const customStart = url.searchParams.get("startDate") || "";
     const customEnd = url.searchParams.get("endDate") || "";
 
-    // Connect to MongoDB
     await connectMongoDB();
-
-    // Simulated delay for premium transition UX
     await new Promise((resolve) => setTimeout(resolve, 850));
 
-    // Calculate dates
     const { start, end } = calculateDateRange(preset, customStart, customEnd);
 
-    // Fetch shop currency
     let currencyCode = "INR";
     try {
         const shopRes = await admin.graphql(GET_STORE_CURRENCY);
@@ -197,7 +196,6 @@ export const loader = async ({ request }) => {
         console.error("Error fetching shop currency:", err);
     }
 
-    // Fetch local MongoDB transactions/events
     let allEvents = [];
     try {
         const ShopModel = getShopModel(shop);
@@ -229,32 +227,24 @@ export const loader = async ({ request }) => {
         console.error("Error loading MongoDB events:", err);
     }
 
-    // Aggregated calculations
-    const completedEvents = allEvents.filter(e => e.status === "Completed");
-    const uniqueOrderIds = Array.from(new Set(completedEvents.map(e => e.orderId)));
+    const completedEvents = allEvents.filter((e) => e.status === "Completed");
+    const uniqueOrderIds = Array.from(new Set(completedEvents.map((e) => e.orderId)));
     const totalOrders = uniqueOrderIds.length;
-    const totalDistributedCustomers = new Set(completedEvents.map(e => e.customerId)).size;
-
-    // Issued Credit sum
+    const totalDistributedCustomers = new Set(completedEvents.map((e) => e.customerId)).size;
     const issuedCredit = completedEvents.reduce((acc, ev) => acc + ev.amount, 0);
 
-    // Fetch Order Sales from Shopify in a nodes query
     let totalSales = 0;
     if (uniqueOrderIds.length > 0) {
         try {
-            const orderGids = uniqueOrderIds.map(id =>
+            const orderGids = uniqueOrderIds.map((id) =>
                 id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`
             );
-
             const chunkedGids = [];
             for (let i = 0; i < orderGids.length; i += 50) {
                 chunkedGids.push(orderGids.slice(i, i + 50));
             }
-
             for (const chunk of chunkedGids) {
-                const orderRes = await admin.graphql(GET_ORDERS_QUERY, {
-                    variables: { ids: chunk }
-                });
+                const orderRes = await admin.graphql(GET_ORDERS_QUERY, { variables: { ids: chunk } });
                 const orderData = await orderRes.json();
                 const nodes = orderData?.data?.nodes || [];
                 for (const order of nodes) {
@@ -270,19 +260,17 @@ export const loader = async ({ request }) => {
 
     const aov = totalOrders > 0 ? Number((totalSales / totalOrders).toFixed(2)) : 0;
 
-    // Fetch applied redemptions/debits from Shopify GraphQL StoreCreditAccountTransactions
     let appliedCredit = 0;
     let debitRefunded = 0;
     let totalCustomersRedeem = 0;
     let totalDistributedLocations = 0;
-
     const redeemCustomersSet = new Set();
     const locationsSet = new Set();
 
     try {
         const txResponse = await admin.graphql(GET_TRANSACTIONS_QUERY);
         const txData = await txResponse.json();
-        const txNodes = txData?.data?.storeCreditAccountTransactions?.edges?.map(e => e.node) || [];
+        const txNodes = txData?.data?.storeCreditAccountTransactions?.edges?.map((e) => e.node) || [];
 
         for (const node of txNodes) {
             const txDate = new Date(node.createdAt);
@@ -300,10 +288,8 @@ export const loader = async ({ request }) => {
                     debitRefunded += Math.abs(amount);
                 }
 
-                if (owner) {
-                    if (owner.__typename === "CompanyLocation") {
-                        locationsSet.add(owner.id);
-                    }
+                if (owner && owner.__typename === "CompanyLocation") {
+                    locationsSet.add(owner.id);
                 }
             }
         }
@@ -314,28 +300,22 @@ export const loader = async ({ request }) => {
         console.error("Error fetching Shopify transactions:", err);
     }
 
-    // Calculate Redemption Rate
     const redemptionRate = issuedCredit > 0 ? Number(((appliedCredit / issuedCredit) * 100).toFixed(2)) : 0;
 
-    // Group Top Programs
     const programsMap = {};
     for (const ev of completedEvents) {
         const progType = ev.type || "Cashback";
         programsMap[progType] = (programsMap[progType] || 0) + ev.amount;
     }
-    const topPrograms = Object.entries(programsMap).map(([name, value]) => ({
-        name,
-        value: Number(value.toFixed(2)),
-    })).sort((a, b) => b.value - a.value);
+    const topPrograms = Object.entries(programsMap)
+        .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }))
+        .sort((a, b) => b.value - a.value);
 
-    // Group Top Customers
     const customersMap = {};
     for (const ev of completedEvents) {
         const custId = ev.customerId;
         const custName = ev.customerName || "Anonymous Customer";
-        if (!customersMap[custId]) {
-            customersMap[custId] = { name: custName, amount: 0 };
-        }
+        if (!customersMap[custId]) customersMap[custId] = { name: custName, amount: 0 };
         customersMap[custId].amount += ev.amount;
     }
     const topCustomers = Object.values(customersMap)
@@ -365,6 +345,46 @@ export const loader = async ({ request }) => {
     };
 };
 
+// ─── Skeleton metric cell ──────────────────────────────────────────────────────
+
+function MetricSkeleton() {
+    return (
+        <BlockStack gap="100">
+            <SkeletonDisplayText size="small" />
+            <SkeletonBodyText lines={1} />
+        </BlockStack>
+    );
+}
+
+// ─── Metric cell ──────────────────────────────────────────────────────────────
+
+function MetricCell({ label, tooltip, value, loading }) {
+    return (
+        <BlockStack gap="100">
+            <Tooltip content={tooltip} dismissOnMouseOut preferredPosition="above">
+                <Text
+                    variant="bodySm"
+                    tone="subdued"
+                    as="span"
+                    textDecorationLine="underline"
+                    fontWeight="medium"
+                >
+                    {label}
+                </Text>
+            </Tooltip>
+            {loading ? (
+                <SkeletonDisplayText size="medium" />
+            ) : (
+                <Text variant="headingLg" as="p">
+                    {value}
+                </Text>
+            )}
+        </BlockStack>
+    );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────────
+
 export default function Analytics() {
     const {
         preset,
@@ -380,59 +400,43 @@ export default function Analytics() {
     const navigation = useNavigation();
     const isFetching = navigation.state === "loading";
 
-    // Popover State
     const [popoverActive, setPopoverActive] = useState(false);
     const [tempPreset, setTempPreset] = useState(preset);
 
-    // Parse initial selected dates
     const initialRange = calculateDateRange(preset, startDateStr, endDateStr);
     const [tempSelectedDates, setTempSelectedDates] = useState({
         start: initialRange.start,
         end: initialRange.end,
     });
 
-    // Calendar month state
     const [{ month, year }, setCalendarMonth] = useState({
         month: tempSelectedDates.start.getMonth(),
         year: tempSelectedDates.start.getFullYear(),
     });
 
-    // Keep temporary selection in sync when parameters update
     useEffect(() => {
         if (!isFetching) {
             setTempPreset(preset);
             const currentRange = calculateDateRange(preset, startDateStr, endDateStr);
-            setTempSelectedDates({
-                start: currentRange.start,
-                end: currentRange.end,
-            });
+            setTempSelectedDates({ start: currentRange.start, end: currentRange.end });
         }
     }, [preset, startDateStr, endDateStr, isFetching]);
 
-    // Handler for preset select dropdown changes
     const handlePresetChange = (value) => {
         setTempPreset(value);
         if (value !== "custom") {
             const calculated = calculateDateRange(value, "", "");
-            setTempSelectedDates({
-                start: calculated.start,
-                end: calculated.end,
-            });
-            setCalendarMonth({
-                month: calculated.start.getMonth(),
-                year: calculated.start.getFullYear(),
-            });
+            setTempSelectedDates({ start: calculated.start, end: calculated.end });
+            setCalendarMonth({ month: calculated.start.getMonth(), year: calculated.start.getFullYear() });
         }
     };
 
     const handleDatePickerChange = (range) => {
         setTempSelectedDates(range);
-        setTempPreset("custom"); // Switch select preset to Custom automatically
+        setTempPreset("custom");
     };
 
-    const handleMonthChange = (month, year) => {
-        setCalendarMonth({ month, year });
-    };
+    const handleMonthChange = (month, year) => setCalendarMonth({ month, year });
 
     const handleApply = () => {
         setPopoverActive(false);
@@ -447,13 +451,9 @@ export default function Analytics() {
 
     const handleCancel = () => {
         setPopoverActive(false);
-        // Reset temporary states
         setTempPreset(preset);
         const currentRange = calculateDateRange(preset, startDateStr, endDateStr);
-        setTempSelectedDates({
-            start: currentRange.start,
-            end: currentRange.end,
-        });
+        setTempSelectedDates({ start: currentRange.start, end: currentRange.end });
     };
 
     const handleRefresh = () => {
@@ -467,14 +467,12 @@ export default function Analytics() {
         submit(params, { method: "get", replace: true });
     };
 
-    // DD-MM-YYYY format helper
     const formatInputDate = (date) => {
         if (!date) return "";
         const d = new Date(date);
         const day = String(d.getDate()).padStart(2, "0");
-        const month = String(d.getMonth() + 1).padStart(2, "0");
-        const year = d.getFullYear();
-        return `${day}-${month}-${year}`;
+        const mon = String(d.getMonth() + 1).padStart(2, "0");
+        return `${day}-${mon}-${d.getFullYear()}`;
     };
 
     const getButtonLabel = () => {
@@ -482,10 +480,7 @@ export default function Analytics() {
         if (preset === "yesterday") return "Yesterday";
         if (preset === "7days") return "Last 7 days";
         if (preset === "30days") return "Last 30 days";
-
-        const startFormatted = formatInputDate(initialRange.start);
-        const endFormatted = formatInputDate(initialRange.end);
-        return `${startFormatted} – ${endFormatted}`;
+        return `${formatInputDate(initialRange.start)} – ${formatInputDate(initialRange.end)}`;
     };
 
     const presetsOptions = [
@@ -495,17 +490,12 @@ export default function Analytics() {
         { label: "Last 30 days", value: "30days" },
         { label: "Custom range", value: "custom" },
     ];
-    const togglePopoverActive = useCallback(
-        () => setPopoverActive((active) => !active),
-        [],
-    );
+
+    const togglePopoverActive = useCallback(() => setPopoverActive((v) => !v), []);
 
     const datePickerActivator = (
-        <Button onClick={togglePopoverActive}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                <CalendarIcon />
-                <span>{getButtonLabel()}</span>
-            </span>
+        <Button onClick={togglePopoverActive} icon={CalendarIcon}>
+            {getButtonLabel()}
         </Button>
     );
 
@@ -516,452 +506,345 @@ export default function Analytics() {
                 content: isFetching ? "Refreshing..." : "Refresh data",
                 onAction: handleRefresh,
                 disabled: isFetching,
+                loading: isFetching,
             }}
         >
-            <style>{`
-                .metric-label-text {
-                    font-size: 13px;
-                    color: #5c5f62;
-                    font-weight: 500;
-                    border-bottom: 1px dotted #8c9196;
-                    cursor: help;
-                }
-                .metric-trend-dash {
-                    color: #8c9196;
-                    font-weight: 400;
-                    margin-left: 8px;
-                    font-size: 20px;
-                }
-                .calendar-icon-wrapper {
-                    display: inline-flex;
-                    align-items: center;
-                    color: #6d7175;
-                }
-                .calendar-icon-svg {
-                    width: 16px;
-                    height: 16px;
-                }
-                @keyframes skeleton-glow {
-                    0% { background-color: #eef0f2; }
-                    50% { background-color: #dfe2e6; }
-                    100% { background-color: #eef0f2; }
-                }
-                .skeleton-pulse {
-                    animation: skeleton-glow 1.5s ease-in-out infinite;
-                    background-color: #eef0f2;
-                    border-radius: 4px;
-                    display: inline-block;
-                }
-                .skeleton-val {
-                    height: 28px;
-                    width: 90px;
-                }
-                .skeleton-line {
-                    height: 12px;
-                    width: 100%;
-                    margin-bottom: 8px;
-                    border-radius: 2px;
-                }
-            `}</style>
+            <Layout>
+                {/* ── Date Range Filter ── */}
+                <Layout.Section>
+                    <InlineStack align="start">
+                        <Popover
+                            active={popoverActive}
+                            activator={datePickerActivator}
+                            onClose={togglePopoverActive}
+                            autofocusTarget="none"
+                        >
+                            <Box padding="400" minWidth="330px">
+                                <BlockStack gap="400">
+                                    <Text variant="headingSm" as="h3">
+                                        Date range
+                                    </Text>
 
-            <BlockStack gap="400">
-                {/* Date range filter */}
-                <InlineStack align="start">
-                    <Popover
-                        active={popoverActive}
-                        activator={datePickerActivator}
-                        onClose={togglePopoverActive}
-                        autofocusTarget="none"
-                    >
-                        <Box padding="400" width="330px">
-                            <BlockStack gap="400">
-                                <Text variant="headingSm" as="h3">Date range</Text>
+                                    {/* Preset select */}
+                                    <BlockStack gap="100">
+                                        <Text variant="bodyXs" as="label" tone="subdued">
+                                            Preset range
+                                        </Text>
+                                        <select
+                                            value={tempPreset}
+                                            onChange={(e) => handlePresetChange(e.target.value)}
+                                            style={{
+                                                width: "100%",
+                                                padding: "8px 12px",
+                                                borderRadius: "6px",
+                                                border: "1px solid #d2d5d8",
+                                                backgroundColor: "#ffffff",
+                                                fontSize: "13px",
+                                                outline: "none",
+                                            }}
+                                        >
+                                            {presetsOptions.map((opt) => (
+                                                <option key={opt.value} value={opt.value}>
+                                                    {opt.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </BlockStack>
 
-                                {/* Preset select */}
-                                <BlockStack gap="100">
-                                    <Text variant="bodyXs" as="label" tone="subdued">Preset range</Text>
-                                    <select
-                                        value={tempPreset}
-                                        onChange={(e) => handlePresetChange(e.target.value)}
-                                        style={{
-                                            width: '100%',
-                                            padding: '8px 12px',
-                                            borderRadius: '6px',
-                                            border: '1px solid #d2d5d8',
-                                            backgroundColor: '#ffffff',
-                                            fontSize: '13px',
-                                            outline: 'none',
-                                        }}
+                                    {/* Date inputs */}
+                                    <InlineStack gap="300" wrap={false}>
+                                        <Box flex="1">
+                                            <BlockStack gap="100">
+                                                <Text variant="bodyXs" as="label" tone="subdued">
+                                                    Starting
+                                                </Text>
+                                                <input
+                                                    type="date"
+                                                    value={tempSelectedDates.start.toISOString().split("T")[0]}
+                                                    onChange={(e) => {
+                                                        const date = new Date(e.target.value);
+                                                        if (date.toString() !== "Invalid Date") {
+                                                            setTempSelectedDates((prev) => ({ ...prev, start: date }));
+                                                            setTempPreset("custom");
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: "100%",
+                                                        padding: "6px 8px",
+                                                        borderRadius: "6px",
+                                                        border: "1px solid #d2d5d8",
+                                                        fontSize: "13px",
+                                                    }}
+                                                />
+                                            </BlockStack>
+                                        </Box>
+                                        <Box flex="1">
+                                            <BlockStack gap="100">
+                                                <Text variant="bodyXs" as="label" tone="subdued">
+                                                    Ending
+                                                </Text>
+                                                <input
+                                                    type="date"
+                                                    value={tempSelectedDates.end.toISOString().split("T")[0]}
+                                                    onChange={(e) => {
+                                                        const date = new Date(e.target.value);
+                                                        if (date.toString() !== "Invalid Date") {
+                                                            setTempSelectedDates((prev) => ({ ...prev, end: date }));
+                                                            setTempPreset("custom");
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        width: "100%",
+                                                        padding: "6px 8px",
+                                                        borderRadius: "6px",
+                                                        border: "1px solid #d2d5d8",
+                                                        fontSize: "13px",
+                                                    }}
+                                                />
+                                            </BlockStack>
+                                        </Box>
+                                    </InlineStack>
+
+                                    {/* Calendar */}
+                                    <Box
+                                        borderWidth="025"
+                                        borderColor="border"
+                                        borderRadius="200"
+                                        padding="200"
                                     >
-                                        {presetsOptions.map((opt) => (
-                                            <option key={opt.value} value={opt.value}>
-                                                {opt.label}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        <DatePicker
+                                            month={month}
+                                            year={year}
+                                            onChange={handleDatePickerChange}
+                                            onMonthChange={handleMonthChange}
+                                            selected={tempSelectedDates}
+                                            allowRange
+                                        />
+                                    </Box>
+
+                                    <Text variant="bodyXs" tone="subdued">
+                                        Maximum range is 90 days
+                                    </Text>
+
+                                    <InlineStack gap="200" align="end">
+                                        <Button onClick={handleCancel}>Cancel</Button>
+                                        <Button variant="primary" onClick={handleApply}>
+                                            Apply
+                                        </Button>
+                                    </InlineStack>
                                 </BlockStack>
+                            </Box>
+                        </Popover>
+                    </InlineStack>
+                </Layout.Section>
 
-                                {/* Starting/Ending inputs */}
-                                <InlineStack gap="300" wrap={false}>
-                                    <div style={{ flex: 1 }}>
-                                        <BlockStack gap="100">
-                                            <Text variant="bodyXs" as="label" tone="subdued">Starting</Text>
-                                            <input
-                                                type="date"
-                                                value={tempSelectedDates.start.toISOString().split("T")[0]}
-                                                onChange={(e) => {
-                                                    const date = new Date(e.target.value);
-                                                    if (date.toString() !== "Invalid Date") {
-                                                        setTempSelectedDates((prev) => ({ ...prev, start: date }));
-                                                        setTempPreset("custom");
-                                                    }
-                                                }}
-                                                style={{
-                                                    width: '100%',
-                                                    padding: '6px 8px',
-                                                    borderRadius: '6px',
-                                                    border: '1px solid #d2d5d8',
-                                                    fontSize: '13px',
-                                                }}
-                                            />
-                                        </BlockStack>
-                                    </div>
-                                    <div style={{ flex: 1 }}>
-                                        <BlockStack gap="100">
-                                            <Text variant="bodyXs" as="label" tone="subdued">Ending</Text>
-                                            <input
-                                                type="date"
-                                                value={tempSelectedDates.end.toISOString().split("T")[0]}
-                                                onChange={(e) => {
-                                                    const date = new Date(e.target.value);
-                                                    if (date.toString() !== "Invalid Date") {
-                                                        setTempSelectedDates((prev) => ({ ...prev, end: date }));
-                                                        setTempPreset("custom");
-                                                    }
-                                                }}
-                                                style={{
-                                                    width: '100%',
-                                                    padding: '6px 8px',
-                                                    borderRadius: '6px',
-                                                    border: '1px solid #d2d5d8',
-                                                    fontSize: '13px',
-                                                }}
-                                            />
-                                        </BlockStack>
-                                    </div>
-                                </InlineStack>
+                {/* ── SECTION 1: Store Credit ── */}
+                <Layout.Section>
+                    <BlockStack gap="200">
+                        <Text variant="headingSm" as="h2" tone="subdued">
+                            Store credit
+                        </Text>
+                        <Card>
+                            <BlockStack gap="400">
+                                <Grid columns={{ xs: 1, sm: 2, md: 4, lg: 4 }} gap={{ xs: "400", md: "600" }}>
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Issued credit"
+                                            tooltip={TOOLTIPS.issuedCredit}
+                                            value={formatCurrency(metrics.issuedCredit, currencyCode)}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Applied credit"
+                                            tooltip={TOOLTIPS.appliedCredit}
+                                            value={formatCurrency(metrics.appliedCredit, currencyCode)}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Debit/Refunded credit"
+                                            tooltip={TOOLTIPS.debitRefunded}
+                                            value={formatCurrency(metrics.debitRefunded, currencyCode)}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Redemption rate"
+                                            tooltip={TOOLTIPS.redemptionRate}
+                                            value={`${metrics.redemptionRate.toFixed(2)}%`}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                </Grid>
 
-                                {/* Calendar */}
-                                <div style={{ border: '1px solid #e1e3e5', borderRadius: '6px', padding: '6px' }}>
-                                    <DatePicker
-                                        month={month}
-                                        year={year}
-                                        onChange={handleDatePickerChange}
-                                        onMonthChange={handleMonthChange}
-                                        selected={tempSelectedDates}
-                                        allowRange
+                                <Divider />
+
+                                {/* Top Programs */}
+                                <BlockStack gap="200">
+                                    <Text variant="headingXs" as="h3">
+                                        Top programs with issued credits
+                                    </Text>
+                                    {isFetching ? (
+                                        <SkeletonBodyText lines={3} />
+                                    ) : topPrograms.length === 0 ? (
+                                        <Box paddingBlock="200">
+                                            <Text align="center" tone="subdued">
+                                                No programs found.
+                                            </Text>
+                                        </Box>
+                                    ) : (
+                                        <BlockStack gap="0">
+                                            {topPrograms.map((program) => (
+                                                <Box
+                                                    key={program.name}
+                                                    paddingBlock="300"
+                                                    borderBlockEndWidth="025"
+                                                    borderColor="border-subdued"
+                                                >
+                                                    <InlineStack align="space-between" blockAlign="center">
+                                                        <Text variant="bodySm" tone="subdued">
+                                                            {program.name}
+                                                        </Text>
+                                                        <Text variant="bodySm" fontWeight="semibold">
+                                                            {formatCurrency(program.value, currencyCode)}
+                                                        </Text>
+                                                    </InlineStack>
+                                                </Box>
+                                            ))}
+                                        </BlockStack>
+                                    )}
+                                </BlockStack>
+                            </BlockStack>
+                        </Card>
+                    </BlockStack>
+                </Layout.Section>
+
+                {/* ── SECTION 2: Orders ── */}
+                <Layout.Section>
+                    <BlockStack gap="200">
+                        <Text variant="headingSm" as="h2" tone="subdued">
+                            Orders
+                        </Text>
+                        <Grid columns={{ xs: 1, sm: 1, md: 3, lg: 3 }} gap="400">
+                            <Grid.Cell>
+                                <Card>
+                                    <MetricCell
+                                        label="Total orders with issued credit"
+                                        tooltip={TOOLTIPS.totalOrders}
+                                        value={metrics.totalOrders}
+                                        loading={isFetching}
                                     />
-                                </div>
+                                </Card>
+                            </Grid.Cell>
+                            <Grid.Cell>
+                                <Card>
+                                    <MetricCell
+                                        label="Total sales of orders with issued credit"
+                                        tooltip={TOOLTIPS.totalSales}
+                                        value={formatCurrency(metrics.totalSales, currencyCode)}
+                                        loading={isFetching}
+                                    />
+                                </Card>
+                            </Grid.Cell>
+                            <Grid.Cell>
+                                <Card>
+                                    <MetricCell
+                                        label="AOV with issued credit"
+                                        tooltip={TOOLTIPS.aov}
+                                        value={formatCurrency(metrics.aov, currencyCode)}
+                                        loading={isFetching}
+                                    />
+                                </Card>
+                            </Grid.Cell>
+                        </Grid>
+                    </BlockStack>
+                </Layout.Section>
 
-                                <Text variant="bodyXs" tone="subdued">Maximum range is 90 days</Text>
+                {/* ── SECTION 3: Customers ── */}
+                <Layout.Section>
+                    <BlockStack gap="200">
+                        <Text variant="headingSm" as="h2" tone="subdued">
+                            Customers
+                        </Text>
+                        <Card>
+                            <BlockStack gap="400">
+                                <Grid columns={{ xs: 1, sm: 2, md: 3, lg: 3 }} gap="400">
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Total customers redeem credit"
+                                            tooltip={TOOLTIPS.totalCustomersRedeem}
+                                            value={metrics.totalCustomersRedeem}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Total distributed customers"
+                                            tooltip={TOOLTIPS.totalDistributedCustomers}
+                                            value={metrics.totalDistributedCustomers}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                    <Grid.Cell>
+                                        <MetricCell
+                                            label="Total distributed company locations"
+                                            tooltip={TOOLTIPS.totalDistributedLocations}
+                                            value={metrics.totalDistributedLocations}
+                                            loading={isFetching}
+                                        />
+                                    </Grid.Cell>
+                                </Grid>
 
-                                <InlineStack gap="200" align="end">
-                                    <Button onClick={handleCancel}>Cancel</Button>
-                                    <Button variant="primary" onClick={handleApply}>Apply</Button>
-                                </InlineStack>
-                            </BlockStack>
-                        </Box>
-                    </Popover>
-                </InlineStack>
+                                <Divider />
 
-                {/* SECTION 1: Store Credit */}
-                <BlockStack gap="200">
-                    <Text variant="headingSm" as="h2" tone="subdued">Store credit</Text>
-                    <Card>
-                        <BlockStack gap="400">
-                            {/* 4 columns Grid */}
-                            <Grid columns={{ xs: 1, sm: 2, md: 4, lg: 4 }} gap={{ xs: '400', md: '600' }}>
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.issuedCredit} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Issued credit</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {formatCurrency(metrics.issuedCredit, currencyCode)}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.appliedCredit} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Applied credit</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {formatCurrency(metrics.appliedCredit, currencyCode)}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.debitRefunded} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Debit/Refunded credit</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {formatCurrency(metrics.debitRefunded, currencyCode)}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.redemptionRate} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Redemption rate</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {`${metrics.redemptionRate.toFixed(2)}%`}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-                            </Grid>
-
-                            <Divider />
-
-                            {/* Top Programs */}
-                            <BlockStack gap="200">
-                                <Text variant="headingXs" as="h3">Top programs with issued credits</Text>
-                                {isFetching ? (
-                                    <BlockStack gap="200">
-                                        <span className="skeleton-pulse skeleton-line" />
-                                        <span className="skeleton-pulse skeleton-line" style={{ width: '75%' }} />
-                                        <span className="skeleton-pulse skeleton-line" style={{ width: '50%' }} />
-                                    </BlockStack>
-                                ) : topPrograms.length === 0 ? (
-                                    <Box paddingBlockStart="200" paddingBlockEnd="200">
-                                        <Text align="center" tone="subdued">No programs found.</Text>
-                                    </Box>
-                                ) : (
-                                    <BlockStack gap="100">
-                                        {topPrograms.map((program) => (
-                                            <div key={program.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f2f4' }}>
-                                                <Text variant="bodySm" as="span" tone="subdued">{program.name}</Text>
-                                                <Text variant="bodySm" as="span" fontWeight="bold">{formatCurrency(program.value, currencyCode)}</Text>
-                                            </div>
-                                        ))}
-                                    </BlockStack>
-                                )}
-                            </BlockStack>
-                        </BlockStack>
-                    </Card>
-                </BlockStack>
-
-                {/* SECTION 2: Orders */}
-                <BlockStack gap="200">
-                    <Text variant="headingSm" as="h2" tone="subdued">Orders</Text>
-                    <Grid columns={{ xs: 1, sm: 1, md: 3, lg: 3 }} gap="400">
-                        <Grid.Cell>
-                            <Card>
-                                <BlockStack gap="100">
-                                    <InlineStack>
-                                        <Tooltip content={TOOLTIPS.totalOrders} dismissOnMouseOut preferredPosition="above">
-                                            <span className="metric-label-text">Total orders with issued credit</span>
-                                        </Tooltip>
-                                    </InlineStack>
-                                    <Text variant="headingLg" as="p">
-                                        {isFetching ? (
-                                            <span className="skeleton-pulse skeleton-val" />
-                                        ) : (
-                                            <>
-                                                {metrics.totalOrders}
-                                                <span className="metric-trend-dash">–</span>
-                                            </>
-                                        )}
+                                {/* Top Customers */}
+                                <BlockStack gap="200">
+                                    <Text variant="headingXs" as="h3">
+                                        Top customers redeem credits
                                     </Text>
+                                    {isFetching ? (
+                                        <SkeletonBodyText lines={3} />
+                                    ) : topCustomers.length === 0 ? (
+                                        <Box paddingBlock="200">
+                                            <Text align="center" tone="subdued">
+                                                No customers found.
+                                            </Text>
+                                        </Box>
+                                    ) : (
+                                        <BlockStack gap="0">
+                                            {topCustomers.map((cust, idx) => (
+                                                <Box
+                                                    key={idx}
+                                                    paddingBlock="300"
+                                                    borderBlockEndWidth="025"
+                                                    borderColor="border-subdued"
+                                                >
+                                                    <InlineStack align="space-between" blockAlign="center">
+                                                        <Text variant="bodySm" tone="subdued">
+                                                            {cust.name}
+                                                        </Text>
+                                                        <Text variant="bodySm" fontWeight="semibold">
+                                                            {formatCurrency(cust.amount, currencyCode)}
+                                                        </Text>
+                                                    </InlineStack>
+                                                </Box>
+                                            ))}
+                                        </BlockStack>
+                                    )}
                                 </BlockStack>
-                            </Card>
-                        </Grid.Cell>
-
-                        <Grid.Cell>
-                            <Card>
-                                <BlockStack gap="100">
-                                    <InlineStack>
-                                        <Tooltip content={TOOLTIPS.totalSales} dismissOnMouseOut preferredPosition="above">
-                                            <span className="metric-label-text">Total sales of orders with issued credit</span>
-                                        </Tooltip>
-                                    </InlineStack>
-                                    <Text variant="headingLg" as="p">
-                                        {isFetching ? (
-                                            <span className="skeleton-pulse skeleton-val" />
-                                        ) : (
-                                            <>
-                                                {formatCurrency(metrics.totalSales, currencyCode)}
-                                                <span className="metric-trend-dash">–</span>
-                                            </>
-                                        )}
-                                    </Text>
-                                </BlockStack>
-                            </Card>
-                        </Grid.Cell>
-
-                        <Grid.Cell>
-                            <Card>
-                                <BlockStack gap="100">
-                                    <InlineStack>
-                                        <Tooltip content={TOOLTIPS.aov} dismissOnMouseOut preferredPosition="above">
-                                            <span className="metric-label-text">AOV with issued credit</span>
-                                        </Tooltip>
-                                    </InlineStack>
-                                    <Text variant="headingLg" as="p">
-                                        {isFetching ? (
-                                            <span className="skeleton-pulse skeleton-val" />
-                                        ) : (
-                                            <>
-                                                {formatCurrency(metrics.aov, currencyCode)}
-                                                <span className="metric-trend-dash">–</span>
-                                            </>
-                                        )}
-                                    </Text>
-                                </BlockStack>
-                            </Card>
-                        </Grid.Cell>
-                    </Grid>
-                </BlockStack>
-
-                {/* SECTION 3: Customers */}
-                <BlockStack gap="200">
-                    <Text variant="headingSm" as="h2" tone="subdued">Customers</Text>
-                    <Card>
-                        <BlockStack gap="400">
-                            {/* 3 columns Grid */}
-                            <Grid columns={{ xs: 1, sm: 2, md: 3, lg: 3 }} gap="400">
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.totalCustomersRedeem} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Total customers redeem credit</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {metrics.totalCustomersRedeem}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.totalDistributedCustomers} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Total distributed customers</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {metrics.totalDistributedCustomers}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-
-                                <Grid.Cell>
-                                    <BlockStack gap="100">
-                                        <InlineStack>
-                                            <Tooltip content={TOOLTIPS.totalDistributedLocations} dismissOnMouseOut preferredPosition="above">
-                                                <span className="metric-label-text">Total distributed company locations</span>
-                                            </Tooltip>
-                                        </InlineStack>
-                                        <Text variant="headingLg" as="p">
-                                            {isFetching ? (
-                                                <span className="skeleton-pulse skeleton-val" />
-                                            ) : (
-                                                <>
-                                                    {metrics.totalDistributedLocations}
-                                                    <span className="metric-trend-dash">–</span>
-                                                </>
-                                            )}
-                                        </Text>
-                                    </BlockStack>
-                                </Grid.Cell>
-                            </Grid>
-
-                            <Divider />
-
-                            {/* Top Customers */}
-                            <BlockStack gap="200">
-                                <Text variant="headingXs" as="h3">Top customers redeem credits</Text>
-                                {isFetching ? (
-                                    <BlockStack gap="200">
-                                        <span className="skeleton-pulse skeleton-line" />
-                                        <span className="skeleton-pulse skeleton-line" style={{ width: '75%' }} />
-                                        <span className="skeleton-pulse skeleton-line" style={{ width: '50%' }} />
-                                    </BlockStack>
-                                ) : topCustomers.length === 0 ? (
-                                    <Box paddingBlockStart="200" paddingBlockEnd="200">
-                                        <Text align="center" tone="subdued">No customers found.</Text>
-                                    </Box>
-                                ) : (
-                                    <BlockStack gap="100">
-                                        {topCustomers.map((cust, idx) => (
-                                            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f2f4' }}>
-                                                <Text variant="bodySm" as="span" tone="subdued">{cust.name}</Text>
-                                                <Text variant="bodySm" as="span" fontWeight="bold">{formatCurrency(cust.amount, currencyCode)}</Text>
-                                            </div>
-                                        ))}
-                                    </BlockStack>
-                                )}
                             </BlockStack>
-                        </BlockStack>
-                    </Card>
-                </BlockStack>
-            </BlockStack>
+                        </Card>
+                    </BlockStack>
+                </Layout.Section>
+
+                <Layout.Section>
+                    <Box paddingBlockEnd="400" />
+                </Layout.Section>
+            </Layout>
         </Page>
     );
 }
