@@ -136,7 +136,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
       customerId,
       customerName,
       amount: cashbackAmount,
-      currency: orderPayload.currency || 'USD',
+      currency: orderPayload.presentment_currency || orderPayload.currency || 'USD',
       status: "Pending",
       emailStatus: "Not Sent",
       type: program.programType === "custom" ? "Custom Program" : "Cashback",
@@ -186,6 +186,10 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           displayFinancialStatus
           currentTotalPriceSet {
             presentmentMoney {
+              amount
+              currencyCode
+            }
+            shopMoney {
               amount
               currencyCode
             }
@@ -254,6 +258,10 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
       }))
     };
 
+    const presentmentAmt = parseFloat(fullOrder.currentTotalPriceSet?.presentmentMoney?.amount || "0");
+    const shopAmt = parseFloat(fullOrder.currentTotalPriceSet?.shopMoney?.amount || "0");
+    const exchangeRate = presentmentAmt > 0 ? (shopAmt / presentmentAmt) : 1;
+
     const cashbackAmount = calculateCashbackAmount(program, mappedOrder);
     if (cashbackAmount <= 0) return;
 
@@ -313,6 +321,8 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
             $set: {
               "events.$.status": "Pending",
               "events.$.amount": cashbackAmount,
+              "events.$.currency": currencyCode,
+              "events.$.exchangeRate": exchangeRate,
               "events.$.emailStatus": "Not Sent",
               "events.$.emailFailReason": "",
               "events.$.processAt": processAt,
@@ -331,6 +341,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           customerName,
           amount: cashbackAmount,
           currency: currencyCode,
+          exchangeRate: exchangeRate,
           status: "Pending",
           emailStatus: "Not Sent",
           type: program.programType === "custom" ? "Custom Program" : "Cashback",
@@ -367,7 +378,8 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
       cashbackAmount,
       currencyCode,
       expiresAt,
-      shouldNotify
+      shouldNotify,
+      exchangeRate
     );
 
     const isSuccessful = storeCreditResult && 
@@ -391,6 +403,8 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
             $set: {
               "events.$.status": "Completed",
               "events.$.amount": cashbackAmount,
+              "events.$.currency": currencyCode,
+              "events.$.exchangeRate": exchangeRate,
               "events.$.emailStatus": finalEmailStatus,
               "events.$.emailFailReason": finalEmailFailReason,
               "events.$.issuedAt": new Date(),
@@ -407,6 +421,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           customerName,
           amount: cashbackAmount,
           currency: currencyCode,
+          exchangeRate: exchangeRate,
           status: "Completed",
           emailStatus: finalEmailStatus,
           emailFailReason: finalEmailFailReason,
@@ -560,7 +575,8 @@ export async function processDelayedCredits(shop: string, adminClient: AdminClie
             ev.amount,
             ev.currency || 'USD',
             expiresAt,
-            shouldNotify
+            shouldNotify,
+            ev.exchangeRate
           );
 
           const isSuccessful = storeCreditResult && 

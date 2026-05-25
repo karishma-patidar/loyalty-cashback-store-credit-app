@@ -76,7 +76,8 @@ export async function addStoreCredit(
   amount: number,
   currencyCode: string,
   expiresAt: string | null,
-  notifyCustomer: boolean = false
+  notifyCustomer: boolean = false,
+  exchangeRate?: number
 ) {
   try {
     // 1. Find the store credit account ID for the customer
@@ -87,6 +88,9 @@ export async function addStoreCredit(
             edges {
               node {
                 id
+                balance {
+                  currencyCode
+                }
               }
             }
           }
@@ -99,6 +103,21 @@ export async function addStoreCredit(
     const accountData = await accountRes.json();
     console.log("GraphQL Response [getCustomerStoreCreditAccount]:", JSON.stringify(accountData, null, 2));
     let storeCreditAccountId = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
+    const accountCurrency = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.balance?.currencyCode;
+
+    let finalAmount = amount;
+    let finalCurrencyCode = currencyCode;
+
+    if (storeCreditAccountId && accountCurrency && accountCurrency !== currencyCode) {
+      console.log(`[Currency Mismatch] Customer's store credit account is in ${accountCurrency}, but transaction is in ${currencyCode}.`);
+      if (exchangeRate && exchangeRate > 0) {
+        finalAmount = Number((amount * exchangeRate).toFixed(2));
+        console.log(`[Currency Conversion] Converted amount from ${amount} ${currencyCode} to ${finalAmount} ${accountCurrency} using exchangeRate ${exchangeRate}`);
+      } else {
+        console.warn(`[Currency Conversion] No exchange rate provided. Falling back to account currency ${accountCurrency} with original amount.`);
+      }
+      finalCurrencyCode = accountCurrency;
+    }
 
     // 2. If no account exists, create one
     if (!storeCreditAccountId) {
@@ -175,8 +194,8 @@ export async function addStoreCredit(
       id: storeCreditAccountId,
       creditInput: {
         creditAmount: {
-          amount: String(amount),
-          currencyCode,
+          amount: String(finalAmount),
+          currencyCode: finalCurrencyCode,
         },
         notify: notifyCustomer,
         ...(expiresAt ? { expiresAt } : {}),
@@ -205,8 +224,8 @@ export async function addStoreCredit(
           id: storeCreditAccountId,
           creditInput: {
             creditAmount: {
-              amount: String(amount),
-              currencyCode,
+              amount: String(finalAmount),
+              currencyCode: finalCurrencyCode,
             },
             ...(expiresAt ? { expiresAt } : {}),
           },
@@ -357,5 +376,49 @@ export function calculateExpirationDate(program: ProgramSettings): string | null
 export async function verifyAppEmbedEnabled(_admin: AdminClient): Promise<boolean> {
   void _admin;
   return true;
+}
+
+/**
+ * Fetch store credit transactions from Shopify Admin GraphQL API.
+ * 
+ * @param admin - Authenticated Shopify Admin client
+ * @returns Array of store credit transaction nodes
+ */
+export async function getStoreCreditTransactions(admin: AdminClient): Promise<any[]> {
+  const query = `#graphql
+    query GetStoreCreditTransactions {
+      storeCreditAccountTransactions(first: 250) {
+        edges {
+          node {
+            id
+            amount {
+              amount
+              currencyCode
+            }
+            transactionType
+            createdAt
+            account {
+              id
+              owner {
+                __typename
+                ... on Customer {
+                  id
+                  displayName
+                  email
+                }
+                ... on CompanyLocation {
+                  id
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const response = await admin.graphql(query);
+  const data = await response.json();
+  return data?.data?.storeCreditAccountTransactions?.edges?.map((edge: any) => edge.node) || [];
 }
 

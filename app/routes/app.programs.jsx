@@ -60,7 +60,7 @@ export const loader = async ({ request }) => {
         }
       }
 
-      prog.issued = `${totalIssued.toFixed(2)} ${currency}`;
+      prog.issued = totalIssued.toFixed(2);
     }
   } catch (err) {
     console.error("❌ Error calculating program issued amounts:", err);
@@ -412,7 +412,7 @@ export default function Programs() {
                         </s-table-cell>
                         <s-table-cell className="py-4 text-right">
                           <s-text color="subdued" className="text-[12px]">
-                            {prog.issued || "0 INR"}
+                            {prog.issued || "0.00"}
                           </s-text>
                         </s-table-cell>
                         <s-table-cell className="py-4 text-right">

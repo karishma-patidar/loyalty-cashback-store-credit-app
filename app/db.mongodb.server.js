@@ -43,6 +43,7 @@ const eventSchema = new mongoose.Schema({
   customerName: String,
   amount: Number,
   currency: String,
+  exchangeRate: Number,
   status: String,
   emailStatus: String,
   emailFailReason: String,

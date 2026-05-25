@@ -1,5 +1,5 @@
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLoaderData, useSubmit, useNavigation, useNavigate } from "react-router";
 // DatePicker replaced by s-date-picker web component
 import {
@@ -13,13 +13,32 @@ import {
     CartesianGrid,
     Tooltip as RechartsTooltip,
     Legend,
-    PieChart,
-    Pie,
     Cell,
 } from "recharts";
 import { authenticate } from "../shopify.server";
 import connectMongoDB, { getShopModel } from "../db.mongodb.server";
-// import { getStoreCreditTransactions } from "../services/storeCredit.server";
+import { getStoreCreditTransactions } from "../services/storeCredit.server";
+
+export const getenabledPresentmentCurrencies = async () => {
+    try {
+        const response = await fetch("shopify:admin/api/2026-04/graphql.json", {
+            method: "POST",
+            body: JSON.stringify({
+                query: ` query {
+          shop{
+            id
+            enabledPresentmentCurrencies
+            currencyCode
+          }
+        }`,
+            }),
+        });
+        const responseData = await response.json();
+        return responseData;
+    } catch (error) {
+        console.error("Error fetching shop data:", error);
+    }
+};
 
 // ─── GraphQL Queries ────────────────────────────────────────────────────────
 
@@ -27,7 +46,6 @@ const GET_STORE_CONFIG = `#graphql
   query GetStoreConfig {
     shop {
       currencyCode
-      countryCode
       enabledPresentmentCurrencies
     }
     shopLocales {
@@ -36,56 +54,9 @@ const GET_STORE_CONFIG = `#graphql
       published
       primary
     }
-    markets(first: 50) {
-      nodes {
-        id
-        name
-        regions(first: 100) {
-          nodes {
-            name
-            ... on MarketRegionCountry {
-              code
-            }
-          }
-        }
-      }
-    }
   }
 `;
 
-
-const GET_TRANSACTIONS_QUERY = `#graphql
-  query GetStoreCreditTransactions {
-    storeCreditAccountTransactions {
-      edges {
-        node {
-          id
-          amount {
-            amount
-            currencyCode
-          }
-          transactionType
-          createdAt
-          account {
-            id
-            owner {
-              __typename
-              ... on Customer {
-                id
-                displayName
-                email
-              }
-              ... on CompanyLocation {
-                id
-                name
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`;
 
 const GET_ORDERS_QUERY = `#graphql
   query GetOrders($ids: [ID!]!) {
@@ -246,7 +217,7 @@ const CHART_COLORS = {
     green: "#50B83C",
 };
 
-const PIE_COLORS = [CHART_COLORS.primary, CHART_COLORS.secondary];
+
 const PROGRAM_COLORS = [
     CHART_COLORS.primary,
     CHART_COLORS.secondary,
@@ -307,7 +278,7 @@ export const loader = async ({ request }) => {
     const shop = session.shop;
 
     const url = new URL(request.url);
-    const preset = url.searchParams.get("preset") || "today";
+    const preset = url.searchParams.get("preset") || "7days";
     const customStart = url.searchParams.get("startDate") || "";
     const customEnd = url.searchParams.get("endDate") || "";
 
@@ -330,10 +301,8 @@ export const loader = async ({ request }) => {
 
     // ── Shop configuration fetching
     let shopCurrency = "INR";
-    let activeCurrencies = [];
+    let rawCurrencies = [];
     let activeLanguages = [];
-    let activeCountries = [];
-    let defaultCountry = "";
 
     try {
         const configRes = await admin.graphql(GET_STORE_CONFIG);
@@ -341,28 +310,8 @@ export const loader = async ({ request }) => {
 
         const shopData = configData?.data?.shop;
         shopCurrency = shopData?.currencyCode || "INR";
-        defaultCountry = shopData?.countryCode || "";
 
-        const rawCurrencies = shopData?.enabledPresentmentCurrencies || [shopCurrency];
-
-        const currencyDetails = {
-            INR: { label: "INR – ₹ Indian Rupee", symbol: "₹" },
-            USD: { label: "USD – $ US Dollar", symbol: "$" },
-            GBP: { label: "GBP – £ British Pound", symbol: "£" },
-            EUR: { label: "EUR – € Euro", symbol: "€" },
-            AUD: { label: "AUD – A$ Australian Dollar", symbol: "A$" },
-            CAD: { label: "CAD – C$ Canadian Dollar", symbol: "C$" },
-            JPY: { label: "JPY – ¥ Japanese Yen", symbol: "¥" },
-        };
-
-        activeCurrencies = rawCurrencies.map(code => {
-            const detail = currencyDetails[code] || { label: `${code} – ${code}`, symbol: code };
-            return {
-                value: code,
-                label: detail.label,
-                symbol: detail.symbol
-            };
-        });
+        rawCurrencies = shopData?.enabledPresentmentCurrencies || [shopCurrency];
 
         const rawLocales = configData?.data?.shopLocales || [];
         const publishedLocales = rawLocales.filter(l => l.published);
@@ -374,52 +323,11 @@ export const loader = async ({ request }) => {
             label: l.name,
         }));
 
-        const marketsNodes = configData?.data?.markets?.nodes || [];
-        const countriesMap = new Map();
-        for (const market of marketsNodes) {
-            if (market.regions?.nodes) {
-                for (const region of market.regions.nodes) {
-                    if (region.code) {
-                        countriesMap.set(region.code, region.name);
-                    }
-                }
-            }
-        }
-
-        if (countriesMap.size === 0 && defaultCountry) {
-            countriesMap.set(defaultCountry, defaultCountry);
-        }
-
-        activeCountries = Array.from(countriesMap.entries()).map(([code, name]) => ({
-            value: code,
-            label: `${code} – ${name}`,
-        }));
-
     } catch (err) {
         console.error("Error fetching shop configuration:", err);
-        activeCurrencies = [{ value: "INR", label: "INR – ₹ Indian Rupee", symbol: "₹" }];
+        rawCurrencies = ["INR"];
         activeLanguages = [{ value: "en", label: "English" }];
-        activeCountries = [{ value: "IN", label: "IN – India" }];
     }
-
-    // ── Selected values (from URL or fallbacks)
-    const selectedCurrency = url.searchParams.get("currency") || shopCurrency;
-
-    // Auto-select defaults for single item
-    let finalCurrency = selectedCurrency;
-    if (activeCurrencies.length === 1) {
-        finalCurrency = activeCurrencies[0].value;
-    }
-
-    const defaultLangCode = activeLanguages.find(l => l.value === url.searchParams.get("language"))
-        ? url.searchParams.get("language")
-        : (activeLanguages.length === 1 ? activeLanguages[0].value : (activeLanguages.find(l => l.primary)?.value || activeLanguages[0]?.value || "en"));
-    const selectedLanguage = url.searchParams.get("language") || defaultLangCode;
-
-    const defaultCountryCode = activeCountries.find(c => c.value === url.searchParams.get("country"))
-        ? url.searchParams.get("country")
-        : (activeCountries.length === 1 ? activeCountries[0].value : defaultCountry);
-    const selectedCountry = url.searchParams.get("country") || defaultCountryCode;
 
     // ── Load ALL events (allTime needed for new-vs-repeat logic)
     let allTimeEvents = [];
@@ -453,9 +361,20 @@ export const loader = async ({ request }) => {
         console.error("Error loading MongoDB events:", err);
     }
 
-    // ── Filter by currency (fallback to all if nothing matches)
-    let filteredRangeEvents = rangeEvents.filter((e) => e.currency === finalCurrency);
-    if (filteredRangeEvents.length === 0) filteredRangeEvents = rangeEvents;
+    // Unique database event currencies from MongoDB
+    const mongoCurrencies = Array.from(new Set(allTimeEvents.map(e => e.currency))).filter(Boolean);
+
+    // ── Selected values (from URL or fallbacks)
+    const selectedCurrency = url.searchParams.get("currency") || shopCurrency;
+    const finalCurrency = selectedCurrency;
+
+    const defaultLangCode = activeLanguages.find(l => l.value === url.searchParams.get("language"))
+        ? url.searchParams.get("language")
+        : (activeLanguages.length === 1 ? activeLanguages[0].value : (activeLanguages.find(l => l.primary)?.value || activeLanguages[0]?.value || "en"));
+    const selectedLanguage = url.searchParams.get("language") || defaultLangCode;
+
+    // ── Filter by currency
+    const filteredRangeEvents = rangeEvents.filter((e) => e.currency === finalCurrency);
 
     const completedEvents = filteredRangeEvents.filter((e) => e.status === "Completed");
     const uniqueOrderIds = Array.from(new Set(completedEvents.map((e) => e.orderId)));
@@ -585,16 +504,6 @@ export const loader = async ({ request }) => {
             repeat: repeatSet.size,
         }));
 
-    // ── CHART 3: Repeat vs New totals
-    const allNewCustomers = new Set();
-    const allRepeatCustomers = new Set();
-    for (const ev of completedEvents) {
-        const firstDate = customerFirstDate[ev.customerId];
-        const isNew = firstDate >= start && firstDate <= end;
-        if (isNew) allNewCustomers.add(ev.customerId);
-        else allRepeatCustomers.add(ev.customerId);
-    }
-    const repeatVsNew = { new: allNewCustomers.size, repeat: allRepeatCustomers.size };
 
     // ── CHART 4: Rewards By Program (horizontal bar)
     const rewardsByProgram = topPrograms.slice(0, 8);
@@ -606,10 +515,8 @@ export const loader = async ({ request }) => {
         shopCurrency,
         selectedCurrency: finalCurrency,
         selectedLanguage,
-        selectedCountry,
-        activeCurrencies,
+        mongoCurrencies,
         activeLanguages,
-        activeCountries,
         metrics: {
             issuedCredit: Number(issuedCredit.toFixed(2)),
             appliedCredit: Number(appliedCredit.toFixed(2)),
@@ -626,7 +533,6 @@ export const loader = async ({ request }) => {
         topCustomers,
         rewardsPerDay,
         customerFrequencyByDate,
-        repeatVsNew,
         rewardsByProgram,
     };
 };
@@ -677,9 +583,20 @@ function MetricCell({ label, tooltip, value, loading, id }) {
 
 function ChartEmptyState() {
     return (
-        <s-stack direction="block" gap="base">
+        <s-stack direction="block" gap="base" style={{ width: "100%" }}>
             <s-text color="subdued">No reward data available</s-text>
-            <SkeletonLines lines={5} />
+            <s-stack direction="block" gap="base" style={{ width: "100%" }}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                    <s-stack key={i} direction="inline" gap="base" alignment="center" style={{ width: "100%" }}>
+                        <SkeletonLine width="33px" height={12} style={{ borderRadius: 3, flexShrink: 0 }} />
+                        <div style={{
+                            height: "2px",
+                            backgroundColor: "#f1f2f4",
+                            flexGrow: 1
+                        }} />
+                    </s-stack>
+                ))}
+            </s-stack>
         </s-stack>
     );
 }
@@ -703,17 +620,6 @@ function CustomChartTooltip({ active, payload, label, currencyCode, isCount }) {
     );
 }
 
-// ─── Donut Center Label ──────────────────────────────────────────────────────
-
-function DonutCenterLabel({ viewBox, total }) {
-    const { cx, cy } = viewBox || { cx: 0, cy: 0 };
-    return (
-        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
-            <tspan x={cx} dy="-0.4em" fontSize="22" fontWeight="700" fill="#202223">{total}</tspan>
-            <tspan x={cx} dy="1.4em" fontSize="11" fill="#8c9196">customers</tspan>
-        </text>
-    );
-}
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -721,11 +627,13 @@ export default function Analytics() {
     const {
         preset, startDateStr, endDateStr,
         shopCurrency, selectedCurrency,
-        selectedLanguage, selectedCountry,
-        activeCurrencies, activeLanguages, activeCountries,
+        selectedLanguage,
+        mongoCurrencies, activeLanguages,
         metrics, topPrograms, topCustomers,
-        rewardsPerDay, customerFrequencyByDate, repeatVsNew, rewardsByProgram,
+        rewardsPerDay, customerFrequencyByDate, rewardsByProgram,
     } = useLoaderData();
+
+    const [currencyOptions, setCurrencyOptions] = useState([]);
 
     const submit = useSubmit();
     const navigate = useNavigate();
@@ -733,7 +641,6 @@ export default function Analytics() {
     const isFetching = navigation.state === "loading";
 
     // ── Date filter state
-    const [popoverActive, setPopoverActive] = useState(false);
     const popoverRef = useRef(null);
     const sDatePickerRef = useRef(null);
 
@@ -768,7 +675,7 @@ export default function Analytics() {
             el.removeEventListener("change", handleChange);
             el.removeEventListener("viewchange", handleViewChange);
         };
-    }, [popoverActive]);
+    }, []);
     const [tempPreset, setTempPreset] = useState(preset);
     const initialRange = calculateDateRange(preset, startDateStr, endDateStr);
     const [tempSelectedDates, setTempSelectedDates] = useState({
@@ -780,33 +687,51 @@ export default function Analytics() {
         year: tempSelectedDates.start.getFullYear(),
     });
 
-    // Close popover when clicking outside
-    useEffect(() => {
-        if (!popoverActive) return;
-        const handleClickOutside = (e) => {
-            if (!e.target.closest(".date-picker-wrapper")) {
-                setPopoverActive(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [popoverActive]);
-
-    // ── Currency, Language, and Country state
+    // ── Currency and Language state
     const [tempCurrency, setTempCurrency] = useState(selectedCurrency);
     const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
-    const [tempCountry, setTempCountry] = useState(selectedCountry);
+
+    const mongoCurrenciesKey = mongoCurrencies?.join(",") || "";
+    useEffect(() => {
+        const fetchCurrencies = async () => {
+            const result = await getenabledPresentmentCurrencies();
+            const shop = result?.data?.shop;
+            const shopCode = shop?.currencyCode || shopCurrency;
+
+            // Only show currencies that actually exist in current MongoDB orders.
+            // If mongoCurrencies is empty (no orders yet), fall back to shopCode only.
+            const activeCurrencies = mongoCurrencies.length > 0 ? mongoCurrencies : [shopCode];
+            setCurrencyOptions(activeCurrencies.map((cur) => ({ label: cur, value: cur })));
+
+            // Determine the best default currency:
+            // prefer store default (shopCode) if it's in the active list, else first available.
+            const defaultCurrency = activeCurrencies.includes(shopCode)
+                ? shopCode
+                : activeCurrencies[0];
+
+            const params = new URLSearchParams(window.location.search);
+            const currentCurrency = params.get("currency");
+
+            // Auto-correct the URL if:
+            // 1. No currency param is set yet (first load), OR
+            // 2. The current currency is no longer in the active orders list (e.g. INR was deleted).
+            if (!currentCurrency || !activeCurrencies.includes(currentCurrency)) {
+                params.set("currency", defaultCurrency);
+                submit(params, { method: "get", replace: true });
+            }
+        };
+        fetchCurrencies();
+    }, [mongoCurrenciesKey, shopCurrency, submit]);
 
     useEffect(() => {
         if (!isFetching) {
             setTempPreset(preset);
             setTempCurrency(selectedCurrency);
             setTempLanguage(selectedLanguage);
-            setTempCountry(selectedCountry);
             const r = calculateDateRange(preset, startDateStr, endDateStr);
             setTempSelectedDates({ start: r.start, end: r.end });
         }
-    }, [preset, startDateStr, endDateStr, selectedCurrency, selectedLanguage, selectedCountry, isFetching]);
+    }, [preset, startDateStr, endDateStr, selectedCurrency, selectedLanguage, isFetching]);
 
     // ── Handlers
     const handlePresetChange = (value) => {
@@ -831,7 +756,6 @@ export default function Analytics() {
         p.set("preset", overrides.preset ?? preset);
         p.set("currency", overrides.currency ?? selectedCurrency);
         p.set("language", overrides.language ?? selectedLanguage);
-        p.set("country", overrides.country ?? selectedCountry);
         if ((overrides.preset ?? preset) === "custom") {
             p.set("startDate", overrides.startDate ?? startDateStr);
             p.set("endDate", overrides.endDate ?? endDateStr);
@@ -840,12 +764,10 @@ export default function Analytics() {
     };
 
     const handleApply = () => {
-        setPopoverActive(false);
         const p = new URLSearchParams();
         p.set("preset", tempPreset);
         p.set("currency", tempCurrency);
         p.set("language", tempLanguage);
-        p.set("country", tempCountry);
         if (tempPreset === "custom") {
             p.set("startDate", formatYYYYMMDD(tempSelectedDates.start));
             p.set("endDate", formatYYYYMMDD(tempSelectedDates.end));
@@ -854,11 +776,9 @@ export default function Analytics() {
     };
 
     const handleCancel = () => {
-        setPopoverActive(false);
         setTempPreset(preset);
         setTempCurrency(selectedCurrency);
         setTempLanguage(selectedLanguage);
-        setTempCountry(selectedCountry);
         const r = calculateDateRange(preset, startDateStr, endDateStr);
         setTempSelectedDates({ start: r.start, end: r.end });
     };
@@ -881,11 +801,6 @@ export default function Analytics() {
         submit(p, { method: "get", replace: true });
     };
 
-    const handleCountryChange = (value) => {
-        setTempCountry(value);
-        const p = buildParams({ country: value });
-        submit(p, { method: "get", replace: true });
-    };
 
     const formatInputDate = (date) => {
         if (!date) return "";
@@ -921,67 +836,20 @@ export default function Analytics() {
         ];
     };
 
-    const togglePopoverActive = useCallback(() => setPopoverActive((v) => !v), []);
-
     const datePickerActivator = (
-        <button
-            onClick={togglePopoverActive}
-            style={{
-                padding: "6px 12px",
-                borderRadius: "6px",
-                border: "1px solid #202223",
-                backgroundColor: "#202223",
-                color: "#ffffff",
-                fontSize: "13px",
-                fontWeight: "500",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                outline: "none",
-            }}
-            type="button"
+        <s-button
+            commandFor="date-picker-popover"
+            icon="calendar"
         >
-            <span style={{ display: "inline-flex", alignItems: "center", marginRight: "6px", color: "#ffffff" }}>
-                <CalendarIcon />
-            </span>
             {getButtonLabel()}
-        </button>
+        </s-button>
     );
 
-    // Pie data
-    const pieData = [
-        { name: "New Customers", value: repeatVsNew.new },
-        { name: "Repeat Customers", value: repeatVsNew.repeat },
-    ];
-    const pieTotal = repeatVsNew.new + repeatVsNew.repeat;
-
-    const selectStyle = {
-        padding: "6px 12px",
-        borderRadius: "6px",
-        border: "1px solid #d2d5d8",
-        backgroundColor: "#ffffff",
-        fontSize: "13px",
-        outline: "none",
-        cursor: "pointer",
-        minWidth: "185px",
-    };
-
-    const headerSelectStyle = {
-        padding: "6px 12px",
-        borderRadius: "6px",
-        border: "1px solid #d2d5d8",
-        backgroundColor: "#ffffff",
-        fontSize: "13px",
-        outline: "none",
-        cursor: "pointer",
-        minWidth: "75px",
-        fontWeight: "500",
-    };
 
     return (
         <s-box className="min-h-screen">
             <s-page>
-                <s-stack direction="block" gap="base">
+                <s-stack gap="base">
 
                     {/* ── Custom Page Header & Filters Row ── */}
                     <s-stack direction="inline" justifyContent="space-between" alignment="center">
@@ -998,81 +866,75 @@ export default function Analytics() {
                         </s-stack>
 
                         <s-stack direction="inline" gap="base" alignment="center">
-                            <s-button
-                                onClick={handleRefresh}
-                                icon="refresh"
-                                loading={isFetching}
-                                disabled={isFetching}
-                            >
-                                Refresh Data
-                            </s-button>
+                            <s-box>
+                                <s-button
+                                    onClick={handleRefresh}
+                                    icon="refresh"
+                                    loading={isFetching}
+                                    disabled={isFetching}
+                                >
+                                    Refresh Data
+                                </s-button>
 
-                            <select
-                                value={tempCurrency}
-                                onChange={(e) => handleCurrencyChange(e.target.value)}
-                                style={headerSelectStyle}
-                                disabled={isFetching || activeCurrencies.length <= 1}
-                            >
-                                {activeCurrencies.map((o) => (
-                                    <option key={o.value} value={o.value}>{o.value}</option>
-                                ))}
-                            </select>
+                            </s-box>
 
-                            <select
-                                value={tempCountry}
-                                onChange={(e) => handleCountryChange(e.target.value)}
-                                style={headerSelectStyle}
-                                disabled={isFetching || activeCountries.length <= 1}
-                            >
-                                {activeCountries.map((o) => (
-                                    <option key={o.value} value={o.value}>{o.value}</option>
-                                ))}
-                            </select>
 
-                            <div className="date-picker-wrapper" style={{ position: "relative", display: "inline-block" }}>
+                            {currencyOptions.length > 1 && (
+                                <s-box>
+                                    <s-select
+                                        value={tempCurrency}
+                                        onInput={(e) => handleCurrencyChange(e.target.value)}
+                                    >
+                                        {currencyOptions.map((currency) => (
+                                            <s-option
+                                                key={currency.value}
+                                                value={currency.value}
+                                            >
+                                                {currency.label}
+                                            </s-option>
+                                        ))}
+                                    </s-select>
+                                </s-box>
+                            )}
+
+                            <s-box className="date-picker-wrapper" style={{ position: "relative", display: "inline-block" }}>
                                 {datePickerActivator}
-                                {popoverActive && (
-                                    <div
+                                <s-popover id="date-picker-popover">
+                                    <s-box
                                         ref={popoverRef}
-                                        style={{
-                                            position: "absolute",
-                                            top: "calc(100% + 6px)",
-                                            right: 0,
-                                            zIndex: 500,
-                                            background: "#ffffff",
-                                            border: "1px solid #d2d5d8",
-                                            borderRadius: "8px",
-                                            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                                            padding: "16px",
-                                            minWidth: "330px",
-                                        }}
+                                        background="surface"
+                                        borderWidth="base"
+                                        borderRadius="base"
+                                        padding="base"
                                     >
                                         <s-stack direction="block" gap="base">
                                             <s-heading variant="headingSm">Date range</s-heading>
 
                                             <s-stack direction="block" gap="tight">
-                                                <select value={tempPreset}
-                                                    onChange={(e) => handlePresetChange(e.target.value)}
-                                                    style={{ ...selectStyle, minWidth: "100%" }}>
+                                                <s-select
+                                                    value={tempPreset}
+                                                    onInput={(e) => handlePresetChange(e.target.value)}
+                                                >
                                                     {getPresetOptions().map((o) => (
-                                                        <option
+                                                        <s-option
                                                             key={o.value}
                                                             value={o.value}
-                                                            disabled={o.value === "custom" && tempPreset !== "custom"}
+                                                            disabled={o.value === "custom" && tempPreset !== "custom" ? "true" : undefined}
                                                         >
                                                             {o.label}
-                                                        </option>
+                                                        </s-option>
                                                     ))}
-                                                </select>
+                                                </s-select>
                                             </s-stack>
 
                                             <s-stack direction="inline" gap="base">
-                                                <div style={{ flex: 1 }}>
-                                                    <s-stack direction="block" gap="tight">
+                                                <s-box >
+                                                    <s-stack direction="inline" gap="tight">
                                                         <s-text color="subdued" variant="small">Starting</s-text>
-                                                        <input type="date"
+                                                        <s-text-field
+                                                            type="date"
                                                             value={formatYYYYMMDD(tempSelectedDates.start)}
-                                                            onChange={(e) => {
+                                                            onInput={(e) => {
                                                                 const d = parseLocalYYYYMMDD(e.target.value);
                                                                 if (d.toString() !== "Invalid Date") {
                                                                     const newRange = { ...tempSelectedDates, start: d };
@@ -1081,16 +943,16 @@ export default function Analytics() {
                                                                     setTempPreset(matched);
                                                                 }
                                                             }}
-                                                            style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #d2d5d8", fontSize: "13px", boxSizing: "border-box" }}
                                                         />
                                                     </s-stack>
-                                                </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <s-stack direction="block" gap="tight">
+                                                </s-box>
+                                                <s-box>
+                                                    <s-stack direction="inline" gap="tight">
                                                         <s-text color="subdued" variant="small">Ending</s-text>
-                                                        <input type="date"
+                                                        <s-text-field
+                                                            type="date"
                                                             value={formatYYYYMMDD(tempSelectedDates.end)}
-                                                            onChange={(e) => {
+                                                            onInput={(e) => {
                                                                 const d = parseLocalYYYYMMDD(e.target.value);
                                                                 if (d.toString() !== "Invalid Date") {
                                                                     const newRange = { ...tempSelectedDates, end: d };
@@ -1099,10 +961,9 @@ export default function Analytics() {
                                                                     setTempPreset(matched);
                                                                 }
                                                             }}
-                                                            style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #d2d5d8", fontSize: "13px", boxSizing: "border-box" }}
                                                         />
                                                     </s-stack>
-                                                </div>
+                                                </s-box>
                                             </s-stack>
 
                                             <s-date-picker
@@ -1111,16 +972,15 @@ export default function Analytics() {
                                                 view={`${year}-${String(month + 1).padStart(2, "0")}`}
                                                 value={`${formatYYYYMMDD(tempSelectedDates.start)}--${formatYYYYMMDD(tempSelectedDates.end)}`}
                                             />
-                                            {/* <s-text color="subdued" variant="small">Maximum range is 90 days</s-text> */}
 
                                             <s-stack direction="inline" gap="base" alignment="end" className="justify-end w-full">
-                                                <s-button onClick={handleCancel}>Cancel</s-button>
-                                                <s-button variant="primary" onClick={handleApply}>Apply</s-button>
+                                                <s-button commandFor="date-picker-popover" command="--hide" onClick={handleCancel}>Cancel</s-button>
+                                                <s-button variant="primary" commandFor="date-picker-popover" command="--hide" onClick={handleApply}>Apply</s-button>
                                             </s-stack>
                                         </s-stack>
-                                    </div>
-                                )}
-                            </div>
+                                    </s-box>
+                                </s-popover>
+                            </s-box>
                         </s-stack>
                     </s-stack>
 
@@ -1144,17 +1004,20 @@ export default function Analytics() {
                                     <s-heading variant="headingXs">Top programs with issued credits</s-heading>
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topPrograms.length === 0
-                                            ? <div style={{ padding: "12px 0", textAlign: "center", color: "var(--p-color-text-subdued)" }}>No programs found.</div>
+                                            ? <s-box padding="base"><s-text color="subdued">No programs found.</s-text></s-box>
                                             : <s-stack direction="block" gap="none">
-                                                {topPrograms.map((p) => (
-                                                    <div key={p.name} style={{ padding: "12px 0", borderBottom: "1px solid var(--p-color-border-subdued)" }}>
-                                                        <s-stack direction="inline" justifyContent="space-between" alignment="center">
-                                                            <s-text color="subdued">{p.name}</s-text>
-                                                            <s-text className="font-semibold">
-                                                                {formatCurrency(p.value, selectedCurrency)}
-                                                            </s-text>
-                                                        </s-stack>
-                                                    </div>
+                                                {topPrograms.map((p, idx) => (
+                                                    <s-box key={p.name}>
+                                                        {idx > 0 && <s-divider />}
+                                                        <s-box paddingBlock="base">
+                                                            <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                                                                <s-text color="subdued">{p.name}</s-text>
+                                                                <s-text variant="bold">
+                                                                    {formatCurrency(p.value, selectedCurrency)}
+                                                                </s-text>
+                                                            </s-stack>
+                                                        </s-box>
+                                                    </s-box>
                                                 ))}
                                             </s-stack>
                                     }
@@ -1203,17 +1066,20 @@ export default function Analytics() {
                                     <s-heading variant="headingXs">Top customers redeem credits</s-heading>
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topCustomers.length === 0
-                                            ? <div style={{ padding: "12px 0", textAlign: "center", color: "var(--p-color-text-subdued)" }}>No customers found.</div>
+                                            ? <s-box padding="base"><s-text color="subdued">No customers found.</s-text></s-box>
                                             : <s-stack direction="block" gap="none">
                                                 {topCustomers.map((c, idx) => (
-                                                    <div key={idx} style={{ padding: "12px 0", borderBottom: "1px solid var(--p-color-border-subdued)" }}>
-                                                        <s-stack direction="inline" justifyContent="space-between" alignment="center">
-                                                            <s-text color="subdued">{c.name}</s-text>
-                                                            <s-text className="font-semibold">
-                                                                {formatCurrency(c.amount, selectedCurrency)}
-                                                            </s-text>
-                                                        </s-stack>
-                                                    </div>
+                                                    <s-box key={idx}>
+                                                        {idx > 0 && <s-divider />}
+                                                        <s-box paddingBlock="base">
+                                                            <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                                                                <s-text color="subdued">{c.name}</s-text>
+                                                                <s-text variant="bold">
+                                                                    {formatCurrency(c.amount, selectedCurrency)}
+                                                                </s-text>
+                                                            </s-stack>
+                                                        </s-box>
+                                                    </s-box>
                                                 ))}
                                             </s-stack>
                                     }
@@ -1306,102 +1172,48 @@ export default function Analytics() {
                             </s-section>
                         </s-grid>
 
-                        {/* Row 2 */}
-                        <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base" className="w-full">
-
-                            {/* Chart 3 — Repeat vs New Customers (Donut) */}
-                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
-                                <s-stack direction="block" gap="base">
-                                    <s-stack direction="block" gap="none">
-                                        <s-heading variant="headingXs">Repeat vs New Customers</s-heading>
-                                        <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
-                                    </s-stack>
-                                    {isFetching
-                                        ? <SkeletonLines lines={6} height={16} />
-                                        : pieTotal === 0
-                                            ? <ChartEmptyState />
-                                            : (
-                                                <ResponsiveContainer width="100%" height={280}>
-                                                    <PieChart>
-                                                        <Pie
-                                                            data={pieData}
-                                                            cx="50%" cy="50%"
-                                                            innerRadius={68} outerRadius={108}
-                                                            dataKey="value"
-                                                            paddingAngle={3}
-                                                            label={({ percent }) =>
-                                                                percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
-                                                            }
-                                                            labelLine={false}
-                                                        >
-                                                            {pieData.map((_, idx) => (
-                                                                <Cell key={`cell-${idx}`}
-                                                                    fill={PIE_COLORS[idx % PIE_COLORS.length]}
-                                                                    stroke="none" />
-                                                            ))}
-                                                            <DonutCenterLabel total={pieTotal} />
-                                                        </Pie>
-                                                        <RechartsTooltip
-                                                            formatter={(value) => [value, ""]}
-                                                            contentStyle={{
-                                                                border: "1px solid #e1e3e5",
-                                                                borderRadius: 8, fontSize: 13,
-                                                            }} />
-                                                        <Legend
-                                                            wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
-                                                            formatter={(value, entry) =>
-                                                                `${value} (${entry.payload.value})`
-                                                            } />
-                                                    </PieChart>
-                                                </ResponsiveContainer>
-                                            )
-                                    }
+                        {/* Row 2 - Total Rewards By Program */}
+                        <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                            <s-stack direction="block" gap="base">
+                                <s-stack direction="block" gap="none">
+                                    <s-heading variant="headingXs">Total Rewards By Program</s-heading>
+                                    <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
                                 </s-stack>
-                            </s-section>
-
-                            {/* Chart 4 — Total Rewards By Program (Horizontal Bar) */}
-                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
-                                <s-stack direction="block" gap="base">
-                                    <s-stack direction="block" gap="none">
-                                        <s-heading variant="headingXs">Total Rewards By Program</s-heading>
-                                        <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
-                                    </s-stack>
-                                    {isFetching
-                                        ? <SkeletonLines lines={6} height={16} />
-                                        : rewardsByProgram.length === 0
-                                            ? <ChartEmptyState />
-                                            : (
-                                                <ResponsiveContainer width="100%" height={280}>
-                                                    <BarChart layout="vertical" data={rewardsByProgram}
-                                                        margin={{ top: 8, right: 24, left: 8, bottom: 0 }}
-                                                        barCategoryGap="25%">
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" horizontal={false} />
-                                                        <XAxis type="number"
-                                                            tick={{ fontSize: 11, fill: "#8c9196" }}
-                                                            tickLine={false} axisLine={false}
-                                                            tickFormatter={(v) => `${currencySymbols[selectedCurrency] || ""}${v}`} />
-                                                        <YAxis type="category" dataKey="name" width={90}
-                                                            tick={{ fontSize: 12, fill: "#202223" }}
-                                                            tickLine={false} axisLine={false} />
-                                                        <RechartsTooltip
-                                                            content={<CustomChartTooltip currencyCode={selectedCurrency} />} />
-                                                        <Bar dataKey="value" name="Rewards" radius={[0, 4, 4, 0]}>
-                                                            {rewardsByProgram.map((_, idx) => (
-                                                                <Cell key={`cell-${idx}`}
-                                                                    fill={PROGRAM_COLORS[idx % PROGRAM_COLORS.length]} />
-                                                            ))}
-                                                        </Bar>
-                                                    </BarChart>
-                                                </ResponsiveContainer>
-                                            )
-                                    }
-                                </s-stack>
-                            </s-section>
-                        </s-grid>
+                                {isFetching
+                                    ? <SkeletonLines lines={6} height={16} />
+                                    : rewardsByProgram.length === 0
+                                        ? <ChartEmptyState />
+                                        : (
+                                            <ResponsiveContainer width="100%" height={280}>
+                                                <BarChart data={rewardsByProgram}
+                                                    margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                                                    barCategoryGap="30%">
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" vertical={false} />
+                                                    <XAxis dataKey="name"
+                                                        tick={{ fontSize: 12, fill: "#202223" }}
+                                                        tickLine={false} axisLine={false} />
+                                                    <YAxis
+                                                        tick={{ fontSize: 11, fill: "#8c9196" }}
+                                                        tickLine={false} axisLine={false}
+                                                        tickFormatter={(v) => `${currencySymbols[selectedCurrency] || ""}${v}`} />
+                                                    <RechartsTooltip
+                                                        content={<CustomChartTooltip currencyCode={selectedCurrency} />} />
+                                                    <Bar dataKey="value" name="Rewards" radius={[4, 4, 0, 0]}>
+                                                        {rewardsByProgram.map((_, idx) => (
+                                                            <Cell key={`cell-${idx}`}
+                                                                fill={PROGRAM_COLORS[idx % PROGRAM_COLORS.length]} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        )
+                                }
+                            </s-stack>
+                        </s-section>
 
                     </s-stack>
 
-                    <div style={{ marginBlockEnd: "32px" }} />
+                    <s-box paddingBlockStart="large" />
                 </s-stack>
             </s-page>
         </s-box>
