@@ -76,12 +76,12 @@ export function PreviewSection({
       {/* Container for Preview card */}
       <s-section>
         <s-box padding="5" style={{ minHeight: "380px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-          
+
           {/* CART PAGE PREVIEW */}
           {previewPage === "cart" && (
             <s-stack gap="base" style={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", gap: "20px" }}>
               <s-heading variant="headingXs">Your cart</s-heading>
-              
+
               {/* Columns */}
               <s-stack direction="inline" alignment="center">
                 <s-text color="subdued" variant="bold">Product</s-text>
@@ -178,7 +178,7 @@ export function PreviewSection({
                   border: "1px solid #E4E8EC"
                 }}
               />
-              
+
               <s-stack direction="block" gap="none">
                 <s-heading variant="headingMd">Example T-Shirt</s-heading>
                 <s-text color="subdued" variant="bold">Rs. 25.00</s-text>

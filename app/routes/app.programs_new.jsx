@@ -183,11 +183,11 @@ export default function NewProgram() {
 
   const [msgCart, setMsgCart] = useState(
     initialProgram?.msgCart ||
-      "You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.",
+    "You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.",
   );
   const [msgProduct, setMsgProduct] = useState(
     initialProgram?.msgProduct ||
-      "Receive {loyalty_credit_amount} store credit when purchasing each item.",
+    "Receive {loyalty_credit_amount} store credit when purchasing each item.",
   );
   const [notifyEmail, setNotifyEmail] = useState(
     initialProgram?.notifyEmail ?? false,
@@ -328,9 +328,9 @@ export default function NewProgram() {
     amountType === "Fixed amount"
       ? (parseFloat(amount) || 0).toFixed(2)
       : (!isNaN(maxCap) && calculatedAmount > maxCap
-          ? maxCap
-          : calculatedAmount
-        ).toFixed(2);
+        ? maxCap
+        : calculatedAmount
+      ).toFixed(2);
 
   const handleSave = useCallback(() => {
     setIsSubmitting(true);

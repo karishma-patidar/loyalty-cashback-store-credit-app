@@ -30,12 +30,19 @@ export const loader = async ({ request }) => {
   let currency = "INR";
   try {
     const ShopModel = getShopModel(session.shop);
-    const docs = await ShopModel.find({});
+    if (ShopModel) {
+      await ShopModel.updateMany(
+        { "events.type": "Custom Program" },
+        { $set: { "events.$[elem].type": "Cashback" } },
+        { arrayFilters: [{ "elem.type": "Custom Program" }] }
+      );
+    }
+    const docs = ShopModel ? await ShopModel.find({}) : [];
 
     // Process each program to assign its dynamic issued amount
     for (const prog of programs) {
       let totalIssued = 0;
-      const isCustom = prog.programType === "product";
+      const isCustom = prog.programType === "custom";
 
       for (const doc of docs) {
         if (doc.events && Array.isArray(doc.events)) {

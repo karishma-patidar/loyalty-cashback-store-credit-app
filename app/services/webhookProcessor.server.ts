@@ -139,7 +139,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
       currency: orderPayload.currency || 'USD',
       status: "Pending",
       emailStatus: "Not Sent",
-      type: program.programType === "product" ? "Custom Program" : "Cashback",
+      type: program.programType === "custom" ? "Custom Program" : "Cashback",
       issuedAt: null,
       createdAt: new Date(),
     };
@@ -333,7 +333,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           currency: currencyCode,
           status: "Pending",
           emailStatus: "Not Sent",
-          type: program.programType === "product" ? "Custom Program" : "Cashback",
+          type: program.programType === "custom" ? "Custom Program" : "Cashback",
           issuedAt: null,
           processAt: processAt,
           expiresAt: expiresAt,
@@ -410,7 +410,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           status: "Completed",
           emailStatus: finalEmailStatus,
           emailFailReason: finalEmailFailReason,
-          type: program.programType === "product" ? "Custom Program" : "Cashback",
+          type: program.programType === "custom" ? "Custom Program" : "Cashback",
           issuedAt: new Date(),
           createdAt: new Date(),
         };
@@ -485,7 +485,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           status: "Failed",
           emailStatus: "Failed",
           emailFailReason: errorMsg,
-          type: program.programType === "product" ? "Custom Program" : "Cashback",
+          type: program.programType === "custom" ? "Custom Program" : "Cashback",
           issuedAt: new Date(),
           createdAt: new Date(),
         };

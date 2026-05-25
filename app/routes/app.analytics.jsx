@@ -1,52 +1,58 @@
-import { useState, useCallback, useEffect } from "react";
-import { useLoaderData, useSubmit, useNavigation } from "react-router";
+
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useLoaderData, useSubmit, useNavigation, useNavigate } from "react-router";
+// DatePicker replaced by s-date-picker web component
 import {
-    Page,
-    Layout,
-    Card,
-    BlockStack,
-    InlineStack,
-    Text,
-    DatePicker,
-    Box,
-    Divider,
-    Button,
-    Popover,
-    Tooltip,
-    Grid,
-    Badge,
-    Spinner,
-    SkeletonBodyText,
-    SkeletonDisplayText,
-} from "@shopify/polaris";
+    ResponsiveContainer,
+    LineChart,
+    Line,
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip as RechartsTooltip,
+    Legend,
+    PieChart,
+    Pie,
+    Cell,
+} from "recharts";
 import { authenticate } from "../shopify.server";
 import connectMongoDB, { getShopModel } from "../db.mongodb.server";
+// import { getStoreCreditTransactions } from "../services/storeCredit.server";
 
-// ─── GraphQL Queries ───────────────────────────────────────────────────────────
+// ─── GraphQL Queries ────────────────────────────────────────────────────────
 
-const GET_STORE_CURRENCY = `#graphql
-  query GetStoreCurrency {
+const GET_STORE_CONFIG = `#graphql
+  query GetStoreConfig {
     shop {
       currencyCode
+      countryCode
+      enabledPresentmentCurrencies
     }
-  }
-`;
-
-const GET_ORDERS_QUERY = `#graphql
-  query GetOrders($ids: [ID!]!) {
-    nodes(ids: $ids) {
-      ... on Order {
+    shopLocales {
+      locale
+      name
+      published
+      primary
+    }
+    markets(first: 50) {
+      nodes {
         id
-        currentTotalPriceSet {
-          presentmentMoney {
-            amount
-            currencyCode
+        name
+        regions(first: 100) {
+          nodes {
+            name
+            ... on MarketRegionCountry {
+              code
+            }
           }
         }
       }
     }
   }
 `;
+
 
 const GET_TRANSACTIONS_QUERY = `#graphql
   query GetStoreCreditTransactions {
@@ -81,7 +87,24 @@ const GET_TRANSACTIONS_QUERY = `#graphql
   }
 `;
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+const GET_ORDERS_QUERY = `#graphql
+  query GetOrders($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Order {
+        id
+        currentTotalPriceSet {
+          presentmentMoney {
+            amount
+            currencyCode
+          }
+        }
+      }
+    }
+  }
+`;
+
+
+// ─── Date Helpers ────────────────────────────────────────────────────────────
 
 function calculateDateRange(preset, startDateStr, endDateStr) {
     const now = new Date();
@@ -104,6 +127,22 @@ function calculateDateRange(preset, startDateStr, endDateStr) {
         start.setDate(now.getDate() - 29);
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
+    } else if (preset === "lastweek") {
+        const startDay = now.getDay();
+        start.setDate(now.getDate() - startDay - 7);
+        start.setHours(0, 0, 0, 0);
+        end.setDate(now.getDate() - startDay - 1);
+        end.setHours(23, 59, 59, 999);
+    } else if (preset === "lastmonth") {
+        start = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+        end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    } else if (preset === "weektodate") {
+        start.setDate(now.getDate() - now.getDay());
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+    } else if (preset === "monthtodate") {
+        start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
     } else if (preset === "custom" && startDateStr && endDateStr) {
         const sParts = startDateStr.split("-");
         const eParts = endDateStr.split("-");
@@ -118,9 +157,55 @@ function calculateDateRange(preset, startDateStr, endDateStr) {
         start.setHours(0, 0, 0, 0);
         end.setHours(23, 59, 59, 999);
     }
-
     return { start, end };
 }
+
+function isSameDay(d1, d2) {
+    if (!d1 || !d2) return false;
+    return (
+        d1.getFullYear() === d2.getFullYear() &&
+        d1.getMonth() === d2.getMonth() &&
+        d1.getDate() === d2.getDate()
+    );
+}
+
+function findMatchingPreset(start, end) {
+    if (!start || !end) return "custom";
+    const presets = ["today", "yesterday", "7days", "30days", "lastweek", "lastmonth", "weektodate", "monthtodate"];
+    for (const p of presets) {
+        const range = calculateDateRange(p);
+        if (isSameDay(range.start, start) && isSameDay(range.end, end)) {
+            return p;
+        }
+    }
+    return "custom";
+}
+
+function formatYYYYMMDD(date) {
+    if (!date) return "";
+    const d = new Date(date);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseLocalYYYYMMDD(str) {
+    const parts = str.split("-");
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    }
+    return new Date(str);
+}
+
+function formatDateLabel(dateObj) {
+    const d = new Date(dateObj);
+    const day = String(d.getDate()).padStart(2, "0");
+    const mon = d.toLocaleString("en-US", { month: "short" });
+    return `${day} ${mon}`;
+}
+
+// ─── Currency Helpers ────────────────────────────────────────────────────────
 
 const currencySymbols = {
     INR: "₹",
@@ -132,6 +217,16 @@ const currencySymbols = {
     JPY: "¥",
 };
 
+const currencyDetails = {
+    INR: { label: "INR – ₹ Indian Rupee", symbol: "₹" },
+    USD: { label: "USD – $ US Dollar", symbol: "$" },
+    GBP: { label: "GBP – £ British Pound", symbol: "£" },
+    EUR: { label: "EUR – € Euro", symbol: "€" },
+    AUD: { label: "AUD – A$ Australian Dollar", symbol: "A$" },
+    CAD: { label: "CAD – C$ Canadian Dollar", symbol: "C$" },
+    JPY: { label: "JPY – ¥ Japanese Yen", symbol: "¥" },
+};
+
 function formatCurrency(amount, currencyCode) {
     const symbol = currencySymbols[currencyCode] || currencyCode || "$";
     return `${symbol}${Number(amount || 0).toLocaleString("en-US", {
@@ -140,7 +235,28 @@ function formatCurrency(amount, currencyCode) {
     })}`;
 }
 
-// ─── Tooltip texts ─────────────────────────────────────────────────────────────
+// ─── Chart Colors ────────────────────────────────────────────────────────────
+
+const CHART_COLORS = {
+    primary: "#008060",
+    secondary: "#5C6AC4",
+    accent: "#47C1BF",
+    orange: "#F49342",
+    purple: "#9C6ADE",
+    green: "#50B83C",
+};
+
+const PIE_COLORS = [CHART_COLORS.primary, CHART_COLORS.secondary];
+const PROGRAM_COLORS = [
+    CHART_COLORS.primary,
+    CHART_COLORS.secondary,
+    CHART_COLORS.accent,
+    CHART_COLORS.orange,
+    CHART_COLORS.purple,
+    CHART_COLORS.green,
+];
+
+// ─── Tooltip Texts ───────────────────────────────────────────────────────────
 
 const TOOLTIPS = {
     issuedCredit: "The total value of loyalty cashback credits issued from reward programs and manual adjustments, excluding refunded or debited credits.",
@@ -155,23 +271,36 @@ const TOOLTIPS = {
     totalDistributedLocations: "Number of company locations where cashback credits were distributed.",
 };
 
-// ─── Inline SVG Icons ──────────────────────────────────────────────────────────
+// ─── Icons ───────────────────────────────────────────────────────────────────
 
 const CalendarIcon = () => (
-    <svg
-        viewBox="0 0 20 20"
-        fill="currentColor"
-        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}
-    >
-        <path
-            fillRule="evenodd"
+    <svg viewBox="0 0 20 20" fill="currentColor"
+        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}>
+        <path fillRule="evenodd"
             d="M6.5 2a.75.75 0 0 1 .75.75V4h5.5V2.75a.75.75 0 0 1 1.5 0V4h1.25A2.5 2.5 0 0 1 18 6.5v9A2.5 2.5 0 0 1 15.5 18h-11A2.5 2.5 0 0 1 2 15.5v-9A2.5 2.5 0 0 1 4.5 4H5.75V2.75A.75.75 0 0 1 6.5 2Zm10 7.5h-13v6a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-6ZM5.75 5.5v.75a.75.75 0 0 1-1.5 0V5.5H4.5A1 1 0 0 0 3.5 6.5V8h13V6.5a1 1 0 0 0-1-1h-.25v.75a.75.75 0 0 1-1.5 0V5.5H5.75Z"
-            clipRule="evenodd"
-        />
+            clipRule="evenodd" />
     </svg>
 );
 
-// ─── Loader ────────────────────────────────────────────────────────────────────
+const ArrowLeftIcon = () => (
+    <svg viewBox="0 0 20 20" fill="currentColor"
+        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}>
+        <path fillRule="evenodd"
+            d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z"
+            clipRule="evenodd" />
+    </svg>
+);
+
+const RefreshIcon = () => (
+    <svg viewBox="0 0 20 20" fill="currentColor"
+        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}>
+        <path fillRule="evenodd"
+            d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.313H7.75a.75.75 0 0 0 0-1.5H3.75a.75.75 0 0 0-.75.75v4a.75.75 0 0 0 1.5 0v-2.125l.674.673a7 7 0 0 0 12.01-4.22.75.75 0 0 0-1.872-.154ZM4.688 8.576a5.5 5.5 0 0 1 9.201-2.466l.312.313H12.25a.75.75 0 0 0 0 1.5h4a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 0-1.5 0v2.125l-.674-.673a7 7 0 0 0-12.01 4.22.75.75 0 1 0 1.872.154Z"
+            clipRule="evenodd" />
+    </svg>
+);
+
+// ─── Loader ──────────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }) => {
     const { admin, session } = await authenticate.admin(request);
@@ -183,43 +312,140 @@ export const loader = async ({ request }) => {
     const customEnd = url.searchParams.get("endDate") || "";
 
     await connectMongoDB();
+    try {
+        const ShopModel = getShopModel(shop);
+        if (ShopModel) {
+            await ShopModel.updateMany(
+                { "events.type": "Custom Program" },
+                { $set: { "events.$[elem].type": "Cashback" } },
+                { arrayFilters: [{ "elem.type": "Custom Program" }] }
+            );
+        }
+    } catch (e) {
+        console.error("Error migrating old events in analytics loader:", e);
+    }
     await new Promise((resolve) => setTimeout(resolve, 850));
 
     const { start, end } = calculateDateRange(preset, customStart, customEnd);
 
-    let currencyCode = "INR";
+    // ── Shop configuration fetching
+    let shopCurrency = "INR";
+    let activeCurrencies = [];
+    let activeLanguages = [];
+    let activeCountries = [];
+    let defaultCountry = "";
+
     try {
-        const shopRes = await admin.graphql(GET_STORE_CURRENCY);
-        const shopData = await shopRes.json();
-        currencyCode = shopData?.data?.shop?.currencyCode || "INR";
+        const configRes = await admin.graphql(GET_STORE_CONFIG);
+        const configData = await configRes.json();
+
+        const shopData = configData?.data?.shop;
+        shopCurrency = shopData?.currencyCode || "INR";
+        defaultCountry = shopData?.countryCode || "";
+
+        const rawCurrencies = shopData?.enabledPresentmentCurrencies || [shopCurrency];
+
+        const currencyDetails = {
+            INR: { label: "INR – ₹ Indian Rupee", symbol: "₹" },
+            USD: { label: "USD – $ US Dollar", symbol: "$" },
+            GBP: { label: "GBP – £ British Pound", symbol: "£" },
+            EUR: { label: "EUR – € Euro", symbol: "€" },
+            AUD: { label: "AUD – A$ Australian Dollar", symbol: "A$" },
+            CAD: { label: "CAD – C$ Canadian Dollar", symbol: "C$" },
+            JPY: { label: "JPY – ¥ Japanese Yen", symbol: "¥" },
+        };
+
+        activeCurrencies = rawCurrencies.map(code => {
+            const detail = currencyDetails[code] || { label: `${code} – ${code}`, symbol: code };
+            return {
+                value: code,
+                label: detail.label,
+                symbol: detail.symbol
+            };
+        });
+
+        const rawLocales = configData?.data?.shopLocales || [];
+        const publishedLocales = rawLocales.filter(l => l.published);
+        const primaryLocaleObj = publishedLocales.find(l => l.primary) || publishedLocales[0];
+        const defaultLanguage = primaryLocaleObj ? primaryLocaleObj.locale : "en";
+
+        activeLanguages = publishedLocales.map(l => ({
+            value: l.locale,
+            label: l.name,
+        }));
+
+        const marketsNodes = configData?.data?.markets?.nodes || [];
+        const countriesMap = new Map();
+        for (const market of marketsNodes) {
+            if (market.regions?.nodes) {
+                for (const region of market.regions.nodes) {
+                    if (region.code) {
+                        countriesMap.set(region.code, region.name);
+                    }
+                }
+            }
+        }
+
+        if (countriesMap.size === 0 && defaultCountry) {
+            countriesMap.set(defaultCountry, defaultCountry);
+        }
+
+        activeCountries = Array.from(countriesMap.entries()).map(([code, name]) => ({
+            value: code,
+            label: `${code} – ${name}`,
+        }));
+
     } catch (err) {
-        console.error("Error fetching shop currency:", err);
+        console.error("Error fetching shop configuration:", err);
+        activeCurrencies = [{ value: "INR", label: "INR – ₹ Indian Rupee", symbol: "₹" }];
+        activeLanguages = [{ value: "en", label: "English" }];
+        activeCountries = [{ value: "IN", label: "IN – India" }];
     }
 
-    let allEvents = [];
+    // ── Selected values (from URL or fallbacks)
+    const selectedCurrency = url.searchParams.get("currency") || shopCurrency;
+
+    // Auto-select defaults for single item
+    let finalCurrency = selectedCurrency;
+    if (activeCurrencies.length === 1) {
+        finalCurrency = activeCurrencies[0].value;
+    }
+
+    const defaultLangCode = activeLanguages.find(l => l.value === url.searchParams.get("language"))
+        ? url.searchParams.get("language")
+        : (activeLanguages.length === 1 ? activeLanguages[0].value : (activeLanguages.find(l => l.primary)?.value || activeLanguages[0]?.value || "en"));
+    const selectedLanguage = url.searchParams.get("language") || defaultLangCode;
+
+    const defaultCountryCode = activeCountries.find(c => c.value === url.searchParams.get("country"))
+        ? url.searchParams.get("country")
+        : (activeCountries.length === 1 ? activeCountries[0].value : defaultCountry);
+    const selectedCountry = url.searchParams.get("country") || defaultCountryCode;
+
+    // ── Load ALL events (allTime needed for new-vs-repeat logic)
+    let allTimeEvents = [];
+    let rangeEvents = [];
     try {
         const ShopModel = getShopModel(shop);
         if (ShopModel) {
             const docs = await ShopModel.find({});
             for (const doc of docs) {
-                if (doc.events && Array.isArray(doc.events)) {
-                    for (const ev of doc.events) {
-                        if (!ev.orderId) continue;
-                        const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(doc.createdAt);
-                        if (eventDate >= start && eventDate <= end) {
-                            allEvents.push({
-                                orderId: ev.orderId,
-                                orderName: ev.orderName,
-                                customerId: ev.customerId,
-                                customerName: ev.customerName,
-                                amount: Number(ev.amount || 0),
-                                currency: ev.currency,
-                                status: ev.status,
-                                type: ev.type || "Cashback",
-                                createdAt: eventDate,
-                            });
-                        }
-                    }
+                if (!Array.isArray(doc.events)) continue;
+                for (const ev of doc.events) {
+                    if (!ev.orderId) continue;
+                    const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(doc.createdAt);
+                    const eventObj = {
+                        orderId: ev.orderId,
+                        orderName: ev.orderName,
+                        customerId: ev.customerId,
+                        customerName: ev.customerName,
+                        amount: Number(ev.amount || 0),
+                        currency: ev.currency,
+                        status: ev.status,
+                        type: ev.type || "Cashback",
+                        createdAt: eventDate,
+                    };
+                    allTimeEvents.push(eventObj);
+                    if (eventDate >= start && eventDate <= end) rangeEvents.push(eventObj);
                 }
             }
         }
@@ -227,28 +453,29 @@ export const loader = async ({ request }) => {
         console.error("Error loading MongoDB events:", err);
     }
 
-    const completedEvents = allEvents.filter((e) => e.status === "Completed");
+    // ── Filter by currency (fallback to all if nothing matches)
+    let filteredRangeEvents = rangeEvents.filter((e) => e.currency === finalCurrency);
+    if (filteredRangeEvents.length === 0) filteredRangeEvents = rangeEvents;
+
+    const completedEvents = filteredRangeEvents.filter((e) => e.status === "Completed");
     const uniqueOrderIds = Array.from(new Set(completedEvents.map((e) => e.orderId)));
     const totalOrders = uniqueOrderIds.length;
     const totalDistributedCustomers = new Set(completedEvents.map((e) => e.customerId)).size;
     const issuedCredit = completedEvents.reduce((acc, ev) => acc + ev.amount, 0);
 
+    // ── Fetch order sales
     let totalSales = 0;
     if (uniqueOrderIds.length > 0) {
         try {
             const orderGids = uniqueOrderIds.map((id) =>
                 id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`
             );
-            const chunkedGids = [];
             for (let i = 0; i < orderGids.length; i += 50) {
-                chunkedGids.push(orderGids.slice(i, i + 50));
-            }
-            for (const chunk of chunkedGids) {
+                const chunk = orderGids.slice(i, i + 50);
                 const orderRes = await admin.graphql(GET_ORDERS_QUERY, { variables: { ids: chunk } });
                 const orderData = await orderRes.json();
-                const nodes = orderData?.data?.nodes || [];
-                for (const order of nodes) {
-                    if (order && order.currentTotalPriceSet) {
+                for (const order of (orderData?.data?.nodes || [])) {
+                    if (order?.currentTotalPriceSet) {
                         totalSales += parseFloat(order.currentTotalPriceSet.presentmentMoney.amount || "0");
                     }
                 }
@@ -260,57 +487,51 @@ export const loader = async ({ request }) => {
 
     const aov = totalOrders > 0 ? Number((totalSales / totalOrders).toFixed(2)) : 0;
 
-    let appliedCredit = 0;
-    let debitRefunded = 0;
-    let totalCustomersRedeem = 0;
-    let totalDistributedLocations = 0;
+    // ── Fetch store credit transactions
+    let appliedCredit = 0, debitRefunded = 0;
+    let totalCustomersRedeem = 0, totalDistributedLocations = 0;
     const redeemCustomersSet = new Set();
     const locationsSet = new Set();
 
     try {
-        const txResponse = await admin.graphql(GET_TRANSACTIONS_QUERY);
-        const txData = await txResponse.json();
-        const txNodes = txData?.data?.storeCreditAccountTransactions?.edges?.map((e) => e.node) || [];
+        const txNodes = await getStoreCreditTransactions(admin);
 
         for (const node of txNodes) {
             const txDate = new Date(node.createdAt);
-            if (txDate >= start && txDate <= end) {
-                const amount = parseFloat(node.amount?.amount || "0");
-                const type = node.transactionType;
-                const owner = node.account?.owner;
+            if (txDate < start || txDate > end) continue;
+            const amount = parseFloat(node.amount?.amount || "0");
+            const type = node.transactionType;
+            const owner = node.account?.owner;
 
-                if (type === "DEBIT") {
-                    appliedCredit += amount;
-                    if (owner && owner.__typename === "Customer") {
-                        redeemCustomersSet.add(owner.id);
-                    }
-                } else if (type === "EXPIRATION" || (type === "ADJUST" && amount < 0) || type === "REVERSION") {
-                    debitRefunded += Math.abs(amount);
-                }
-
-                if (owner && owner.__typename === "CompanyLocation") {
-                    locationsSet.add(owner.id);
-                }
+            if (type === "DEBIT") {
+                appliedCredit += amount;
+                if (owner?.__typename === "Customer") redeemCustomersSet.add(owner.id);
+            } else if (type === "EXPIRATION" || (type === "ADJUST" && amount < 0) || type === "REVERSION") {
+                debitRefunded += Math.abs(amount);
             }
+            if (owner?.__typename === "CompanyLocation") locationsSet.add(owner.id);
         }
-
         totalCustomersRedeem = redeemCustomersSet.size;
         totalDistributedLocations = locationsSet.size;
     } catch (err) {
         console.error("Error fetching Shopify transactions:", err);
     }
 
-    const redemptionRate = issuedCredit > 0 ? Number(((appliedCredit / issuedCredit) * 100).toFixed(2)) : 0;
+    const redemptionRate = issuedCredit > 0
+        ? Number(((appliedCredit / issuedCredit) * 100).toFixed(2))
+        : 0;
 
+    // ── Top Programs
     const programsMap = {};
     for (const ev of completedEvents) {
-        const progType = ev.type || "Cashback";
-        programsMap[progType] = (programsMap[progType] || 0) + ev.amount;
+        const k = ev.type || "Cashback";
+        programsMap[k] = (programsMap[k] || 0) + ev.amount;
     }
     const topPrograms = Object.entries(programsMap)
         .map(([name, value]) => ({ name, value: Number(value.toFixed(2)) }))
         .sort((a, b) => b.value - a.value);
 
+    // ── Top Customers
     const customersMap = {};
     for (const ev of completedEvents) {
         const custId = ev.customerId;
@@ -323,11 +544,72 @@ export const loader = async ({ request }) => {
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 5);
 
+    // ── CHART 1: Rewards Issued Per Day (line)
+    const rewardsPerDayMap = {};
+    for (const ev of completedEvents) {
+        const dk = ev.createdAt.toISOString().split("T")[0];
+        rewardsPerDayMap[dk] = (rewardsPerDayMap[dk] || 0) + ev.amount;
+    }
+    const rewardsPerDay = Object.entries(rewardsPerDayMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([dk, amount]) => ({
+            date: formatDateLabel(new Date(dk + "T12:00:00")),
+            amount: Number(amount.toFixed(2)),
+        }));
+
+    // ── CHART 2 & 3: Customer Frequency — new vs repeat
+    // First-ever credit date per customer across ALL TIME
+    const customerFirstDate = {};
+    for (const ev of allTimeEvents) {
+        if (ev.status !== "Completed") continue;
+        const cid = ev.customerId;
+        if (!customerFirstDate[cid] || ev.createdAt < customerFirstDate[cid]) {
+            customerFirstDate[cid] = ev.createdAt;
+        }
+    }
+
+    const freqByDateMap = {};
+    for (const ev of completedEvents) {
+        const dk = ev.createdAt.toISOString().split("T")[0];
+        if (!freqByDateMap[dk]) freqByDateMap[dk] = { newSet: new Set(), repeatSet: new Set() };
+        const firstDate = customerFirstDate[ev.customerId];
+        const isNew = firstDate >= start && firstDate <= end;
+        if (isNew) freqByDateMap[dk].newSet.add(ev.customerId);
+        else freqByDateMap[dk].repeatSet.add(ev.customerId);
+    }
+    const customerFrequencyByDate = Object.entries(freqByDateMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([dk, { newSet, repeatSet }]) => ({
+            date: formatDateLabel(new Date(dk + "T12:00:00")),
+            new: newSet.size,
+            repeat: repeatSet.size,
+        }));
+
+    // ── CHART 3: Repeat vs New totals
+    const allNewCustomers = new Set();
+    const allRepeatCustomers = new Set();
+    for (const ev of completedEvents) {
+        const firstDate = customerFirstDate[ev.customerId];
+        const isNew = firstDate >= start && firstDate <= end;
+        if (isNew) allNewCustomers.add(ev.customerId);
+        else allRepeatCustomers.add(ev.customerId);
+    }
+    const repeatVsNew = { new: allNewCustomers.size, repeat: allRepeatCustomers.size };
+
+    // ── CHART 4: Rewards By Program (horizontal bar)
+    const rewardsByProgram = topPrograms.slice(0, 8);
+
     return {
         preset,
         startDateStr: customStart,
         endDateStr: customEnd,
-        currencyCode,
+        shopCurrency,
+        selectedCurrency: finalCurrency,
+        selectedLanguage,
+        selectedCountry,
+        activeCurrencies,
+        activeLanguages,
+        activeCountries,
         metrics: {
             issuedCredit: Number(issuedCredit.toFixed(2)),
             appliedCredit: Number(appliedCredit.toFixed(2)),
@@ -342,129 +624,267 @@ export const loader = async ({ request }) => {
         },
         topPrograms,
         topCustomers,
+        rewardsPerDay,
+        customerFrequencyByDate,
+        repeatVsNew,
+        rewardsByProgram,
     };
 };
 
-// ─── Skeleton metric cell ──────────────────────────────────────────────────────
+// ─── Skeleton Helpers ────────────────────────────────────────────────────────
 
-function MetricSkeleton() {
+function SkeletonLine({ width = "100%", height = 14, style = {} }) {
     return (
-        <BlockStack gap="100">
-            <SkeletonDisplayText size="small" />
-            <SkeletonBodyText lines={1} />
-        </BlockStack>
+        <div style={{
+            width, height,
+            borderRadius: 6,
+            background: "linear-gradient(90deg, #f1f2f4 25%, #e8e9eb 50%, #f1f2f4 75%)",
+            backgroundSize: "200% 100%",
+            animation: "shimmer 1.4s infinite",
+            ...style,
+        }} />
     );
 }
 
-// ─── Metric cell ──────────────────────────────────────────────────────────────
-
-function MetricCell({ label, tooltip, value, loading }) {
+function SkeletonLines({ lines = 4, height = 12 }) {
     return (
-        <BlockStack gap="100">
-            <Tooltip content={tooltip} dismissOnMouseOut preferredPosition="above">
-                <Text
-                    variant="bodySm"
-                    tone="subdued"
-                    as="span"
-                    textDecorationLine="underline"
-                    fontWeight="medium"
-                >
-                    {label}
-                </Text>
-            </Tooltip>
-            {loading ? (
-                <SkeletonDisplayText size="medium" />
-            ) : (
-                <Text variant="headingLg" as="p">
-                    {value}
-                </Text>
-            )}
-        </BlockStack>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+            {Array.from({ length: lines }).map((_, i) => (
+                <SkeletonLine key={i} width={i === lines - 1 ? "70%" : "100%"} height={height} />
+            ))}
+        </div>
     );
 }
 
-// ─── Main Component ────────────────────────────────────────────────────────────
+// ─── MetricCell ──────────────────────────────────────────────────────────────
+
+function MetricCell({ label, tooltip, value, loading, id }) {
+    const tooltipId = `tooltip-${id}`;
+    return (
+        <s-stack direction="block" gap="base">
+            <s-tooltip id={tooltipId}>{tooltip}</s-tooltip>
+            <s-text interestFor={tooltipId}>{label}</s-text>
+            {loading
+                ? <SkeletonLine width="80%" height={28} />
+                : <s-text style={{ fontSize: 20, fontWeight: 700, color: "#202223" }}>{value}</s-text>
+            }
+        </s-stack>
+    );
+}
+
+// ─── Chart Empty State ───────────────────────────────────────────────────────
+
+function ChartEmptyState() {
+    return (
+        <s-stack direction="block" gap="base">
+            <s-text color="subdued">No reward data available</s-text>
+            <SkeletonLines lines={5} />
+        </s-stack>
+    );
+}
+
+// ─── Custom Recharts Tooltip ─────────────────────────────────────────────────
+
+function CustomChartTooltip({ active, payload, label, currencyCode, isCount }) {
+    if (!active || !payload?.length) return null;
+    return (
+        <div style={{
+            background: "#fff", border: "1px solid #e1e3e5", borderRadius: 8,
+            padding: "10px 14px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: 13,
+        }}>
+            <p style={{ margin: "0 0 6px", fontWeight: 600, color: "#202223" }}>{label}</p>
+            {payload.map((entry, i) => (
+                <p key={i} style={{ margin: "2px 0", color: entry.color }}>
+                    {entry.name}: {isCount ? entry.value : formatCurrency(entry.value, currencyCode)}
+                </p>
+            ))}
+        </div>
+    );
+}
+
+// ─── Donut Center Label ──────────────────────────────────────────────────────
+
+function DonutCenterLabel({ viewBox, total }) {
+    const { cx, cy } = viewBox || { cx: 0, cy: 0 };
+    return (
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle">
+            <tspan x={cx} dy="-0.4em" fontSize="22" fontWeight="700" fill="#202223">{total}</tspan>
+            <tspan x={cx} dy="1.4em" fontSize="11" fill="#8c9196">customers</tspan>
+        </text>
+    );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Analytics() {
     const {
-        preset,
-        startDateStr,
-        endDateStr,
-        currencyCode,
-        metrics,
-        topPrograms,
-        topCustomers,
+        preset, startDateStr, endDateStr,
+        shopCurrency, selectedCurrency,
+        selectedLanguage, selectedCountry,
+        activeCurrencies, activeLanguages, activeCountries,
+        metrics, topPrograms, topCustomers,
+        rewardsPerDay, customerFrequencyByDate, repeatVsNew, rewardsByProgram,
     } = useLoaderData();
 
     const submit = useSubmit();
+    const navigate = useNavigate();
     const navigation = useNavigation();
     const isFetching = navigation.state === "loading";
 
+    // ── Date filter state
     const [popoverActive, setPopoverActive] = useState(false);
-    const [tempPreset, setTempPreset] = useState(preset);
+    const popoverRef = useRef(null);
+    const sDatePickerRef = useRef(null);
 
+    // Wire up s-date-picker change events via DOM
+    useEffect(() => {
+        const el = sDatePickerRef.current;
+        if (!el) return;
+        const handleChange = (e) => {
+            const val = e.target?.value || e.detail?.value || "";
+            if (val && val.includes("--")) {
+                const [startStr, endStr] = val.split("--");
+                const start = parseLocalYYYYMMDD(startStr);
+                const end = parseLocalYYYYMMDD(endStr);
+                if (start.toString() !== "Invalid Date" && end.toString() !== "Invalid Date") {
+                    const newRange = { start, end };
+                    setTempSelectedDates(newRange);
+                    setTempPreset(findMatchingPreset(start, end));
+                    setCalendarMonth({ month: start.getMonth(), year: start.getFullYear() });
+                }
+            }
+        };
+        const handleViewChange = (e) => {
+            const view = e.target?.view || e.detail?.view || "";
+            if (view && view.includes("-")) {
+                const [y, m] = view.split("-");
+                setCalendarMonth({ month: parseInt(m, 10) - 1, year: parseInt(y, 10) });
+            }
+        };
+        el.addEventListener("change", handleChange);
+        el.addEventListener("viewchange", handleViewChange);
+        return () => {
+            el.removeEventListener("change", handleChange);
+            el.removeEventListener("viewchange", handleViewChange);
+        };
+    }, [popoverActive]);
+    const [tempPreset, setTempPreset] = useState(preset);
     const initialRange = calculateDateRange(preset, startDateStr, endDateStr);
     const [tempSelectedDates, setTempSelectedDates] = useState({
         start: initialRange.start,
         end: initialRange.end,
     });
-
     const [{ month, year }, setCalendarMonth] = useState({
         month: tempSelectedDates.start.getMonth(),
         year: tempSelectedDates.start.getFullYear(),
     });
 
+    // Close popover when clicking outside
+    useEffect(() => {
+        if (!popoverActive) return;
+        const handleClickOutside = (e) => {
+            if (!e.target.closest(".date-picker-wrapper")) {
+                setPopoverActive(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [popoverActive]);
+
+    // ── Currency, Language, and Country state
+    const [tempCurrency, setTempCurrency] = useState(selectedCurrency);
+    const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
+    const [tempCountry, setTempCountry] = useState(selectedCountry);
+
     useEffect(() => {
         if (!isFetching) {
             setTempPreset(preset);
-            const currentRange = calculateDateRange(preset, startDateStr, endDateStr);
-            setTempSelectedDates({ start: currentRange.start, end: currentRange.end });
+            setTempCurrency(selectedCurrency);
+            setTempLanguage(selectedLanguage);
+            setTempCountry(selectedCountry);
+            const r = calculateDateRange(preset, startDateStr, endDateStr);
+            setTempSelectedDates({ start: r.start, end: r.end });
         }
-    }, [preset, startDateStr, endDateStr, isFetching]);
+    }, [preset, startDateStr, endDateStr, selectedCurrency, selectedLanguage, selectedCountry, isFetching]);
 
+    // ── Handlers
     const handlePresetChange = (value) => {
         setTempPreset(value);
         if (value !== "custom") {
-            const calculated = calculateDateRange(value, "", "");
-            setTempSelectedDates({ start: calculated.start, end: calculated.end });
-            setCalendarMonth({ month: calculated.start.getMonth(), year: calculated.start.getFullYear() });
+            const c = calculateDateRange(value, "", "");
+            setTempSelectedDates({ start: c.start, end: c.end });
+            setCalendarMonth({ month: c.start.getMonth(), year: c.start.getFullYear() });
         }
     };
 
     const handleDatePickerChange = (range) => {
         setTempSelectedDates(range);
-        setTempPreset("custom");
+        const matched = findMatchingPreset(range.start, range.end);
+        setTempPreset(matched);
     };
 
-    const handleMonthChange = (month, year) => setCalendarMonth({ month, year });
+    const handleMonthChange = (m, y) => setCalendarMonth({ month: m, year: y });
+
+    const buildParams = (overrides = {}) => {
+        const p = new URLSearchParams();
+        p.set("preset", overrides.preset ?? preset);
+        p.set("currency", overrides.currency ?? selectedCurrency);
+        p.set("language", overrides.language ?? selectedLanguage);
+        p.set("country", overrides.country ?? selectedCountry);
+        if ((overrides.preset ?? preset) === "custom") {
+            p.set("startDate", overrides.startDate ?? startDateStr);
+            p.set("endDate", overrides.endDate ?? endDateStr);
+        }
+        return p;
+    };
 
     const handleApply = () => {
         setPopoverActive(false);
-        const params = new URLSearchParams();
-        params.set("preset", tempPreset);
+        const p = new URLSearchParams();
+        p.set("preset", tempPreset);
+        p.set("currency", tempCurrency);
+        p.set("language", tempLanguage);
+        p.set("country", tempCountry);
         if (tempPreset === "custom") {
-            params.set("startDate", tempSelectedDates.start.toISOString().split("T")[0]);
-            params.set("endDate", tempSelectedDates.end.toISOString().split("T")[0]);
+            p.set("startDate", formatYYYYMMDD(tempSelectedDates.start));
+            p.set("endDate", formatYYYYMMDD(tempSelectedDates.end));
         }
-        submit(params, { method: "get", replace: true });
+        submit(p, { method: "get", replace: true });
     };
 
     const handleCancel = () => {
         setPopoverActive(false);
         setTempPreset(preset);
-        const currentRange = calculateDateRange(preset, startDateStr, endDateStr);
-        setTempSelectedDates({ start: currentRange.start, end: currentRange.end });
+        setTempCurrency(selectedCurrency);
+        setTempLanguage(selectedLanguage);
+        setTempCountry(selectedCountry);
+        const r = calculateDateRange(preset, startDateStr, endDateStr);
+        setTempSelectedDates({ start: r.start, end: r.end });
     };
 
     const handleRefresh = () => {
-        const params = new URLSearchParams();
-        params.set("preset", preset);
-        if (preset === "custom") {
-            params.set("startDate", startDateStr);
-            params.set("endDate", endDateStr);
-        }
-        params.set("_refresh", String(Date.now()));
-        submit(params, { method: "get", replace: true });
+        const p = buildParams();
+        p.set("_refresh", String(Date.now()));
+        submit(p, { method: "get", replace: true });
+    };
+
+    const handleCurrencyChange = (value) => {
+        setTempCurrency(value);
+        const p = buildParams({ currency: value });
+        submit(p, { method: "get", replace: true });
+    };
+
+    const handleLanguageChange = (value) => {
+        setTempLanguage(value);
+        const p = buildParams({ language: value });
+        submit(p, { method: "get", replace: true });
+    };
+
+    const handleCountryChange = (value) => {
+        setTempCountry(value);
+        const p = buildParams({ country: value });
+        submit(p, { method: "get", replace: true });
     };
 
     const formatInputDate = (date) => {
@@ -480,371 +900,511 @@ export default function Analytics() {
         if (preset === "yesterday") return "Yesterday";
         if (preset === "7days") return "Last 7 days";
         if (preset === "30days") return "Last 30 days";
+        if (preset === "lastweek") return "Last week";
+        if (preset === "lastmonth") return "Last month";
+        if (preset === "weektodate") return "Week to date";
+        if (preset === "monthtodate") return "Month to date";
         return `${formatInputDate(initialRange.start)} – ${formatInputDate(initialRange.end)}`;
     };
 
-    const presetsOptions = [
-        { label: "Today", value: "today" },
-        { label: "Yesterday", value: "yesterday" },
-        { label: "Last 7 days", value: "7days" },
-        { label: "Last 30 days", value: "30days" },
-        { label: "Custom range", value: "custom" },
-    ];
+    const getPresetOptions = () => {
+        return [
+            { label: "Today", value: "today" },
+            { label: "Yesterday", value: "yesterday" },
+            { label: "Last 7 days", value: "7days" },
+            { label: "Last 30 days", value: "30days" },
+            { label: "Last week", value: "lastweek" },
+            { label: "Last month", value: "lastmonth" },
+            { label: "Week to date", value: "weektodate" },
+            { label: "Month to date", value: "monthtodate" },
+            { label: "Custom", value: "custom" },
+        ];
+    };
 
     const togglePopoverActive = useCallback(() => setPopoverActive((v) => !v), []);
 
     const datePickerActivator = (
-        <Button onClick={togglePopoverActive} icon={CalendarIcon}>
+        <button
+            onClick={togglePopoverActive}
+            style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "1px solid #202223",
+                backgroundColor: "#202223",
+                color: "#ffffff",
+                fontSize: "13px",
+                fontWeight: "500",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                outline: "none",
+            }}
+            type="button"
+        >
+            <span style={{ display: "inline-flex", alignItems: "center", marginRight: "6px", color: "#ffffff" }}>
+                <CalendarIcon />
+            </span>
             {getButtonLabel()}
-        </Button>
+        </button>
     );
+
+    // Pie data
+    const pieData = [
+        { name: "New Customers", value: repeatVsNew.new },
+        { name: "Repeat Customers", value: repeatVsNew.repeat },
+    ];
+    const pieTotal = repeatVsNew.new + repeatVsNew.repeat;
+
+    const selectStyle = {
+        padding: "6px 12px",
+        borderRadius: "6px",
+        border: "1px solid #d2d5d8",
+        backgroundColor: "#ffffff",
+        fontSize: "13px",
+        outline: "none",
+        cursor: "pointer",
+        minWidth: "185px",
+    };
+
+    const headerSelectStyle = {
+        padding: "6px 12px",
+        borderRadius: "6px",
+        border: "1px solid #d2d5d8",
+        backgroundColor: "#ffffff",
+        fontSize: "13px",
+        outline: "none",
+        cursor: "pointer",
+        minWidth: "75px",
+        fontWeight: "500",
+    };
 
     return (
-        <Page
-            title="Analytics"
-            primaryAction={{
-                content: isFetching ? "Refreshing..." : "Refresh data",
-                onAction: handleRefresh,
-                disabled: isFetching,
-                loading: isFetching,
-            }}
-        >
-            <Layout>
-                {/* ── Date Range Filter ── */}
-                <Layout.Section>
-                    <InlineStack align="start">
-                        <Popover
-                            active={popoverActive}
-                            activator={datePickerActivator}
-                            onClose={togglePopoverActive}
-                            autofocusTarget="none"
-                        >
-                            <Box padding="400" minWidth="330px">
-                                <BlockStack gap="400">
-                                    <Text variant="headingSm" as="h3">
-                                        Date range
-                                    </Text>
+        <s-box className="min-h-screen">
+            <s-page>
+                <s-stack direction="block" gap="base">
 
-                                    {/* Preset select */}
-                                    <BlockStack gap="100">
-                                        <Text variant="bodyXs" as="label" tone="subdued">
-                                            Preset range
-                                        </Text>
-                                        <select
-                                            value={tempPreset}
-                                            onChange={(e) => handlePresetChange(e.target.value)}
-                                            style={{
-                                                width: "100%",
-                                                padding: "8px 12px",
-                                                borderRadius: "6px",
-                                                border: "1px solid #d2d5d8",
-                                                backgroundColor: "#ffffff",
-                                                fontSize: "13px",
-                                                outline: "none",
-                                            }}
-                                        >
-                                            {presetsOptions.map((opt) => (
-                                                <option key={opt.value} value={opt.value}>
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </BlockStack>
+                    {/* ── Custom Page Header & Filters Row ── */}
+                    <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                        <s-stack direction="inline" gap="base" alignment="center">
+                            <s-button
+                                icon="arrow-left"
+                                variant="tertiary"
+                                onClick={() => navigate("/app")}
+                                accessibilityLabel="Back"
+                            />
+                            <s-heading variant="headingLg" className="font-bold">
+                                Analytics
+                            </s-heading>
+                        </s-stack>
 
-                                    {/* Date inputs */}
-                                    <InlineStack gap="300" wrap={false}>
-                                        <Box flex="1">
-                                            <BlockStack gap="100">
-                                                <Text variant="bodyXs" as="label" tone="subdued">
-                                                    Starting
-                                                </Text>
-                                                <input
-                                                    type="date"
-                                                    value={tempSelectedDates.start.toISOString().split("T")[0]}
-                                                    onChange={(e) => {
-                                                        const date = new Date(e.target.value);
-                                                        if (date.toString() !== "Invalid Date") {
-                                                            setTempSelectedDates((prev) => ({ ...prev, start: date }));
-                                                            setTempPreset("custom");
-                                                        }
-                                                    }}
-                                                    style={{
-                                                        width: "100%",
-                                                        padding: "6px 8px",
-                                                        borderRadius: "6px",
-                                                        border: "1px solid #d2d5d8",
-                                                        fontSize: "13px",
-                                                    }}
-                                                />
-                                            </BlockStack>
-                                        </Box>
-                                        <Box flex="1">
-                                            <BlockStack gap="100">
-                                                <Text variant="bodyXs" as="label" tone="subdued">
-                                                    Ending
-                                                </Text>
-                                                <input
-                                                    type="date"
-                                                    value={tempSelectedDates.end.toISOString().split("T")[0]}
-                                                    onChange={(e) => {
-                                                        const date = new Date(e.target.value);
-                                                        if (date.toString() !== "Invalid Date") {
-                                                            setTempSelectedDates((prev) => ({ ...prev, end: date }));
-                                                            setTempPreset("custom");
-                                                        }
-                                                    }}
-                                                    style={{
-                                                        width: "100%",
-                                                        padding: "6px 8px",
-                                                        borderRadius: "6px",
-                                                        border: "1px solid #d2d5d8",
-                                                        fontSize: "13px",
-                                                    }}
-                                                />
-                                            </BlockStack>
-                                        </Box>
-                                    </InlineStack>
+                        <s-stack direction="inline" gap="base" alignment="center">
+                            <s-button
+                                onClick={handleRefresh}
+                                icon="refresh"
+                                loading={isFetching}
+                                disabled={isFetching}
+                            >
+                                Refresh Data
+                            </s-button>
 
-                                    {/* Calendar */}
-                                    <Box
-                                        borderWidth="025"
-                                        borderColor="border"
-                                        borderRadius="200"
-                                        padding="200"
+                            <select
+                                value={tempCurrency}
+                                onChange={(e) => handleCurrencyChange(e.target.value)}
+                                style={headerSelectStyle}
+                                disabled={isFetching || activeCurrencies.length <= 1}
+                            >
+                                {activeCurrencies.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.value}</option>
+                                ))}
+                            </select>
+
+                            <select
+                                value={tempCountry}
+                                onChange={(e) => handleCountryChange(e.target.value)}
+                                style={headerSelectStyle}
+                                disabled={isFetching || activeCountries.length <= 1}
+                            >
+                                {activeCountries.map((o) => (
+                                    <option key={o.value} value={o.value}>{o.value}</option>
+                                ))}
+                            </select>
+
+                            <div className="date-picker-wrapper" style={{ position: "relative", display: "inline-block" }}>
+                                {datePickerActivator}
+                                {popoverActive && (
+                                    <div
+                                        ref={popoverRef}
+                                        style={{
+                                            position: "absolute",
+                                            top: "calc(100% + 6px)",
+                                            right: 0,
+                                            zIndex: 500,
+                                            background: "#ffffff",
+                                            border: "1px solid #d2d5d8",
+                                            borderRadius: "8px",
+                                            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                                            padding: "16px",
+                                            minWidth: "330px",
+                                        }}
                                     >
-                                        <DatePicker
-                                            month={month}
-                                            year={year}
-                                            onChange={handleDatePickerChange}
-                                            onMonthChange={handleMonthChange}
-                                            selected={tempSelectedDates}
-                                            allowRange
-                                        />
-                                    </Box>
+                                        <s-stack direction="block" gap="base">
+                                            <s-heading variant="headingSm">Date range</s-heading>
 
-                                    <Text variant="bodyXs" tone="subdued">
-                                        Maximum range is 90 days
-                                    </Text>
+                                            <s-stack direction="block" gap="tight">
+                                                <select value={tempPreset}
+                                                    onChange={(e) => handlePresetChange(e.target.value)}
+                                                    style={{ ...selectStyle, minWidth: "100%" }}>
+                                                    {getPresetOptions().map((o) => (
+                                                        <option
+                                                            key={o.value}
+                                                            value={o.value}
+                                                            disabled={o.value === "custom" && tempPreset !== "custom"}
+                                                        >
+                                                            {o.label}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </s-stack>
 
-                                    <InlineStack gap="200" align="end">
-                                        <Button onClick={handleCancel}>Cancel</Button>
-                                        <Button variant="primary" onClick={handleApply}>
-                                            Apply
-                                        </Button>
-                                    </InlineStack>
-                                </BlockStack>
-                            </Box>
-                        </Popover>
-                    </InlineStack>
-                </Layout.Section>
+                                            <s-stack direction="inline" gap="base">
+                                                <div style={{ flex: 1 }}>
+                                                    <s-stack direction="block" gap="tight">
+                                                        <s-text color="subdued" variant="small">Starting</s-text>
+                                                        <input type="date"
+                                                            value={formatYYYYMMDD(tempSelectedDates.start)}
+                                                            onChange={(e) => {
+                                                                const d = parseLocalYYYYMMDD(e.target.value);
+                                                                if (d.toString() !== "Invalid Date") {
+                                                                    const newRange = { ...tempSelectedDates, start: d };
+                                                                    setTempSelectedDates(newRange);
+                                                                    const matched = findMatchingPreset(newRange.start, newRange.end);
+                                                                    setTempPreset(matched);
+                                                                }
+                                                            }}
+                                                            style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #d2d5d8", fontSize: "13px", boxSizing: "border-box" }}
+                                                        />
+                                                    </s-stack>
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <s-stack direction="block" gap="tight">
+                                                        <s-text color="subdued" variant="small">Ending</s-text>
+                                                        <input type="date"
+                                                            value={formatYYYYMMDD(tempSelectedDates.end)}
+                                                            onChange={(e) => {
+                                                                const d = parseLocalYYYYMMDD(e.target.value);
+                                                                if (d.toString() !== "Invalid Date") {
+                                                                    const newRange = { ...tempSelectedDates, end: d };
+                                                                    setTempSelectedDates(newRange);
+                                                                    const matched = findMatchingPreset(newRange.start, newRange.end);
+                                                                    setTempPreset(matched);
+                                                                }
+                                                            }}
+                                                            style={{ width: "100%", padding: "6px 8px", borderRadius: "6px", border: "1px solid #d2d5d8", fontSize: "13px", boxSizing: "border-box" }}
+                                                        />
+                                                    </s-stack>
+                                                </div>
+                                            </s-stack>
 
-                {/* ── SECTION 1: Store Credit ── */}
-                <Layout.Section>
-                    <BlockStack gap="200">
-                        <Text variant="headingSm" as="h2" tone="subdued">
-                            Store credit
-                        </Text>
-                        <Card>
-                            <BlockStack gap="400">
-                                <Grid columns={{ xs: 1, sm: 2, md: 4, lg: 4 }} gap={{ xs: "400", md: "600" }}>
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Issued credit"
-                                            tooltip={TOOLTIPS.issuedCredit}
-                                            value={formatCurrency(metrics.issuedCredit, currencyCode)}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Applied credit"
-                                            tooltip={TOOLTIPS.appliedCredit}
-                                            value={formatCurrency(metrics.appliedCredit, currencyCode)}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Debit/Refunded credit"
-                                            tooltip={TOOLTIPS.debitRefunded}
-                                            value={formatCurrency(metrics.debitRefunded, currencyCode)}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Redemption rate"
-                                            tooltip={TOOLTIPS.redemptionRate}
-                                            value={`${metrics.redemptionRate.toFixed(2)}%`}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                </Grid>
+                                            <s-date-picker
+                                                ref={sDatePickerRef}
+                                                type="range"
+                                                view={`${year}-${String(month + 1).padStart(2, "0")}`}
+                                                value={`${formatYYYYMMDD(tempSelectedDates.start)}--${formatYYYYMMDD(tempSelectedDates.end)}`}
+                                            />
+                                            {/* <s-text color="subdued" variant="small">Maximum range is 90 days</s-text> */}
 
-                                <Divider />
+                                            <s-stack direction="inline" gap="base" alignment="end" className="justify-end w-full">
+                                                <s-button onClick={handleCancel}>Cancel</s-button>
+                                                <s-button variant="primary" onClick={handleApply}>Apply</s-button>
+                                            </s-stack>
+                                        </s-stack>
+                                    </div>
+                                )}
+                            </div>
+                        </s-stack>
+                    </s-stack>
 
-                                {/* Top Programs */}
-                                <BlockStack gap="200">
-                                    <Text variant="headingXs" as="h3">
-                                        Top programs with issued credits
-                                    </Text>
-                                    {isFetching ? (
-                                        <SkeletonBodyText lines={3} />
-                                    ) : topPrograms.length === 0 ? (
-                                        <Box paddingBlock="200">
-                                            <Text align="center" tone="subdued">
-                                                No programs found.
-                                            </Text>
-                                        </Box>
-                                    ) : (
-                                        <BlockStack gap="0">
-                                            {topPrograms.map((program) => (
-                                                <Box
-                                                    key={program.name}
-                                                    paddingBlock="300"
-                                                    borderBlockEndWidth="025"
-                                                    borderColor="border-subdued"
-                                                >
-                                                    <InlineStack align="space-between" blockAlign="center">
-                                                        <Text variant="bodySm" tone="subdued">
-                                                            {program.name}
-                                                        </Text>
-                                                        <Text variant="bodySm" fontWeight="semibold">
-                                                            {formatCurrency(program.value, currencyCode)}
-                                                        </Text>
-                                                    </InlineStack>
-                                                </Box>
-                                            ))}
-                                        </BlockStack>
-                                    )}
-                                </BlockStack>
-                            </BlockStack>
-                        </Card>
-                    </BlockStack>
-                </Layout.Section>
+                    {/* ── SECTION 1: Store Credit ── */}
+                    <s-stack direction="block" gap="base">
+                        <s-heading variant="headingSm" className="text-gray-500">Store credit</s-heading>
+                        <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                            <s-stack direction="block" gap="base">
+                                <s-grid gridTemplateColumns="repeat(4, 1fr)" gap="base" className="w-full">
+                                    <MetricCell id="issued" label="Issued credit" tooltip={TOOLTIPS.issuedCredit}
+                                        value={formatCurrency(metrics.issuedCredit, selectedCurrency)} loading={isFetching} />
+                                    <MetricCell id="applied" label="Applied credit" tooltip={TOOLTIPS.appliedCredit}
+                                        value={formatCurrency(metrics.appliedCredit, selectedCurrency)} loading={isFetching} />
+                                    <MetricCell id="debit" label="Debit/Refunded credit" tooltip={TOOLTIPS.debitRefunded}
+                                        value={formatCurrency(metrics.debitRefunded, selectedCurrency)} loading={isFetching} />
+                                    <MetricCell id="redemption" label="Redemption rate" tooltip={TOOLTIPS.redemptionRate}
+                                        value={`${metrics.redemptionRate.toFixed(2)}%`} loading={isFetching} />
+                                </s-grid>
+                                <s-divider />
+                                <s-stack direction="block" gap="tight">
+                                    <s-heading variant="headingXs">Top programs with issued credits</s-heading>
+                                    {isFetching ? <SkeletonLines lines={3} /> :
+                                        topPrograms.length === 0
+                                            ? <div style={{ padding: "12px 0", textAlign: "center", color: "var(--p-color-text-subdued)" }}>No programs found.</div>
+                                            : <s-stack direction="block" gap="none">
+                                                {topPrograms.map((p) => (
+                                                    <div key={p.name} style={{ padding: "12px 0", borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                                                        <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                                                            <s-text color="subdued">{p.name}</s-text>
+                                                            <s-text className="font-semibold">
+                                                                {formatCurrency(p.value, selectedCurrency)}
+                                                            </s-text>
+                                                        </s-stack>
+                                                    </div>
+                                                ))}
+                                            </s-stack>
+                                    }
+                                </s-stack>
+                            </s-stack>
+                        </s-section>
+                    </s-stack>
 
-                {/* ── SECTION 2: Orders ── */}
-                <Layout.Section>
-                    <BlockStack gap="200">
-                        <Text variant="headingSm" as="h2" tone="subdued">
-                            Orders
-                        </Text>
-                        <Grid columns={{ xs: 1, sm: 1, md: 3, lg: 3 }} gap="400">
-                            <Grid.Cell>
-                                <Card>
-                                    <MetricCell
-                                        label="Total orders with issued credit"
-                                        tooltip={TOOLTIPS.totalOrders}
-                                        value={metrics.totalOrders}
-                                        loading={isFetching}
-                                    />
-                                </Card>
-                            </Grid.Cell>
-                            <Grid.Cell>
-                                <Card>
-                                    <MetricCell
-                                        label="Total sales of orders with issued credit"
-                                        tooltip={TOOLTIPS.totalSales}
-                                        value={formatCurrency(metrics.totalSales, currencyCode)}
-                                        loading={isFetching}
-                                    />
-                                </Card>
-                            </Grid.Cell>
-                            <Grid.Cell>
-                                <Card>
-                                    <MetricCell
-                                        label="AOV with issued credit"
-                                        tooltip={TOOLTIPS.aov}
-                                        value={formatCurrency(metrics.aov, currencyCode)}
-                                        loading={isFetching}
-                                    />
-                                </Card>
-                            </Grid.Cell>
-                        </Grid>
-                    </BlockStack>
-                </Layout.Section>
+                    {/* ── SECTION 2: Orders ── */}
+                    <s-stack direction="block" gap="base">
+                        <s-heading variant="headingSm" className="text-gray-500">Orders</s-heading>
 
-                {/* ── SECTION 3: Customers ── */}
-                <Layout.Section>
-                    <BlockStack gap="200">
-                        <Text variant="headingSm" as="h2" tone="subdued">
-                            Customers
-                        </Text>
-                        <Card>
-                            <BlockStack gap="400">
-                                <Grid columns={{ xs: 1, sm: 2, md: 3, lg: 3 }} gap="400">
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Total customers redeem credit"
-                                            tooltip={TOOLTIPS.totalCustomersRedeem}
-                                            value={metrics.totalCustomersRedeem}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Total distributed customers"
-                                            tooltip={TOOLTIPS.totalDistributedCustomers}
-                                            value={metrics.totalDistributedCustomers}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                    <Grid.Cell>
-                                        <MetricCell
-                                            label="Total distributed company locations"
-                                            tooltip={TOOLTIPS.totalDistributedLocations}
-                                            value={metrics.totalDistributedLocations}
-                                            loading={isFetching}
-                                        />
-                                    </Grid.Cell>
-                                </Grid>
+                        <s-section>
+                            <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base" className="w-full">
+                                <s-box padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                    <MetricCell id="total-orders" label="Total orders with issued credit" tooltip={TOOLTIPS.totalOrders}
+                                        value={metrics.totalOrders} loading={isFetching} />
+                                </s-box>
+                                <s-box padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                    <MetricCell id="total-sales" label="Total sales of orders with issued credit" tooltip={TOOLTIPS.totalSales}
+                                        value={formatCurrency(metrics.totalSales, selectedCurrency)} loading={isFetching} />
+                                </s-box>
+                                <s-box padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                    <MetricCell id="aov" label="AOV with issued credit" tooltip={TOOLTIPS.aov}
+                                        value={formatCurrency(metrics.aov, selectedCurrency)} loading={isFetching} />
+                                </s-box>
+                            </s-grid>
+                        </s-section>
+                    </s-stack>
 
-                                <Divider />
+                    {/* ── SECTION 3: Customers ── */}
+                    <s-stack direction="block" gap="base">
+                        <s-heading variant="headingSm" className="text-gray-500">Customers</s-heading>
+                        <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                            <s-stack direction="block" gap="base">
+                                <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base" className="w-full">
+                                    <MetricCell id="redeem" label="Total customers redeem credit" tooltip={TOOLTIPS.totalCustomersRedeem}
+                                        value={metrics.totalCustomersRedeem} loading={isFetching} />
+                                    <MetricCell id="distributed" label="Total distributed customers" tooltip={TOOLTIPS.totalDistributedCustomers}
+                                        value={metrics.totalDistributedCustomers} loading={isFetching} />
+                                    <MetricCell id="locations" label="Total distributed company locations" tooltip={TOOLTIPS.totalDistributedLocations}
+                                        value={metrics.totalDistributedLocations} loading={isFetching} />
+                                </s-grid>
+                                <s-divider />
+                                <s-stack direction="block" gap="tight">
+                                    <s-heading variant="headingXs">Top customers redeem credits</s-heading>
+                                    {isFetching ? <SkeletonLines lines={3} /> :
+                                        topCustomers.length === 0
+                                            ? <div style={{ padding: "12px 0", textAlign: "center", color: "var(--p-color-text-subdued)" }}>No customers found.</div>
+                                            : <s-stack direction="block" gap="none">
+                                                {topCustomers.map((c, idx) => (
+                                                    <div key={idx} style={{ padding: "12px 0", borderBottom: "1px solid var(--p-color-border-subdued)" }}>
+                                                        <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                                                            <s-text color="subdued">{c.name}</s-text>
+                                                            <s-text className="font-semibold">
+                                                                {formatCurrency(c.amount, selectedCurrency)}
+                                                            </s-text>
+                                                        </s-stack>
+                                                    </div>
+                                                ))}
+                                            </s-stack>
+                                    }
+                                </s-stack>
+                            </s-stack>
+                        </s-section>
+                    </s-stack>
 
-                                {/* Top Customers */}
-                                <BlockStack gap="200">
-                                    <Text variant="headingXs" as="h3">
-                                        Top customers redeem credits
-                                    </Text>
-                                    {isFetching ? (
-                                        <SkeletonBodyText lines={3} />
-                                    ) : topCustomers.length === 0 ? (
-                                        <Box paddingBlock="200">
-                                            <Text align="center" tone="subdued">
-                                                No customers found.
-                                            </Text>
-                                        </Box>
-                                    ) : (
-                                        <BlockStack gap="0">
-                                            {topCustomers.map((cust, idx) => (
-                                                <Box
-                                                    key={idx}
-                                                    paddingBlock="300"
-                                                    borderBlockEndWidth="025"
-                                                    borderColor="border-subdued"
-                                                >
-                                                    <InlineStack align="space-between" blockAlign="center">
-                                                        <Text variant="bodySm" tone="subdued">
-                                                            {cust.name}
-                                                        </Text>
-                                                        <Text variant="bodySm" fontWeight="semibold">
-                                                            {formatCurrency(cust.amount, currencyCode)}
-                                                        </Text>
-                                                    </InlineStack>
-                                                </Box>
-                                            ))}
-                                        </BlockStack>
-                                    )}
-                                </BlockStack>
-                            </BlockStack>
-                        </Card>
-                    </BlockStack>
-                </Layout.Section>
+                    {/* ── SECTION 4: Charts / Trends ── */}
 
-                <Layout.Section>
-                    <Box paddingBlockEnd="400" />
-                </Layout.Section>
-            </Layout>
-        </Page>
+                    <s-stack direction="block" gap="base" >
+                        <s-heading variant="headingSm" className="text-gray-500">Trends</s-heading>
+
+                        {/* Row 1 */}
+                        <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base" className="w-full">
+
+                            {/* Chart 1 — Rewards Issued Per Day (Line) */}
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <s-stack direction="block" gap="base">
+                                    <s-stack direction="block" gap="none">
+                                        <s-heading variant="headingXs">Rewards Issued Per Day</s-heading>
+                                        <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
+                                    </s-stack>
+                                    {isFetching
+                                        ? <SkeletonLines lines={6} height={16} />
+                                        : rewardsPerDay.length === 0
+                                            ? <ChartEmptyState />
+                                            : (
+                                                <ResponsiveContainer width="100%" height={260}>
+                                                    <LineChart data={rewardsPerDay}
+                                                        margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" />
+                                                        <XAxis dataKey="date"
+                                                            tick={{ fontSize: 11, fill: "#8c9196" }}
+                                                            tickLine={false} axisLine={false} />
+                                                        <YAxis
+                                                            tick={{ fontSize: 11, fill: "#8c9196" }}
+                                                            tickLine={false} axisLine={false}
+                                                            tickFormatter={(v) => `${currencySymbols[selectedCurrency] || ""}${v}`} />
+                                                        <RechartsTooltip
+                                                            content={<CustomChartTooltip currencyCode={selectedCurrency} />} />
+                                                        <Line type="monotone" dataKey="amount" name="Issued"
+                                                            stroke={CHART_COLORS.primary} strokeWidth={2.5}
+                                                            dot={{ r: 4, fill: CHART_COLORS.primary, strokeWidth: 0 }}
+                                                            activeDot={{ r: 6 }} />
+                                                    </LineChart>
+                                                </ResponsiveContainer>
+                                            )
+                                    }
+                                </s-stack>
+                            </s-section>
+
+                            {/* Chart 2 — Customer Frequency By Date (Grouped Bar) */}
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <s-stack direction="block" gap="base">
+                                    <s-stack direction="block" gap="none">
+                                        <s-heading variant="headingXs">Customer Frequency By Date</s-heading>
+                                        <s-text color="subdued" variant="small">
+                                            Customers earn credit for the first time vs repeatedly. · Currency: {selectedCurrency}
+                                        </s-text>
+                                    </s-stack>
+                                    {isFetching
+                                        ? <SkeletonLines lines={6} height={16} />
+                                        : customerFrequencyByDate.length === 0
+                                            ? <ChartEmptyState />
+                                            : (
+                                                <ResponsiveContainer width="100%" height={260}>
+                                                    <BarChart data={customerFrequencyByDate}
+                                                        margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                                                        barCategoryGap="30%" barGap={4}>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" />
+                                                        <XAxis dataKey="date"
+                                                            tick={{ fontSize: 11, fill: "#8c9196" }}
+                                                            tickLine={false} axisLine={false} />
+                                                        <YAxis
+                                                            tick={{ fontSize: 11, fill: "#8c9196" }}
+                                                            tickLine={false} axisLine={false} allowDecimals={false} />
+                                                        <RechartsTooltip
+                                                            content={<CustomChartTooltip currencyCode={selectedCurrency} isCount />} />
+                                                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                                                        <Bar dataKey="new" name="New"
+                                                            fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} />
+                                                        <Bar dataKey="repeat" name="Repeat"
+                                                            fill={CHART_COLORS.secondary} radius={[4, 4, 0, 0]} />
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            )
+                                    }
+                                </s-stack>
+                            </s-section>
+                        </s-grid>
+
+                        {/* Row 2 */}
+                        <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base" className="w-full">
+
+                            {/* Chart 3 — Repeat vs New Customers (Donut) */}
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <s-stack direction="block" gap="base">
+                                    <s-stack direction="block" gap="none">
+                                        <s-heading variant="headingXs">Repeat vs New Customers</s-heading>
+                                        <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
+                                    </s-stack>
+                                    {isFetching
+                                        ? <SkeletonLines lines={6} height={16} />
+                                        : pieTotal === 0
+                                            ? <ChartEmptyState />
+                                            : (
+                                                <ResponsiveContainer width="100%" height={280}>
+                                                    <PieChart>
+                                                        <Pie
+                                                            data={pieData}
+                                                            cx="50%" cy="50%"
+                                                            innerRadius={68} outerRadius={108}
+                                                            dataKey="value"
+                                                            paddingAngle={3}
+                                                            label={({ percent }) =>
+                                                                percent > 0.04 ? `${(percent * 100).toFixed(0)}%` : ""
+                                                            }
+                                                            labelLine={false}
+                                                        >
+                                                            {pieData.map((_, idx) => (
+                                                                <Cell key={`cell-${idx}`}
+                                                                    fill={PIE_COLORS[idx % PIE_COLORS.length]}
+                                                                    stroke="none" />
+                                                            ))}
+                                                            <DonutCenterLabel total={pieTotal} />
+                                                        </Pie>
+                                                        <RechartsTooltip
+                                                            formatter={(value) => [value, ""]}
+                                                            contentStyle={{
+                                                                border: "1px solid #e1e3e5",
+                                                                borderRadius: 8, fontSize: 13,
+                                                            }} />
+                                                        <Legend
+                                                            wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                                                            formatter={(value, entry) =>
+                                                                `${value} (${entry.payload.value})`
+                                                            } />
+                                                    </PieChart>
+                                                </ResponsiveContainer>
+                                            )
+                                    }
+                                </s-stack>
+                            </s-section>
+
+                            {/* Chart 4 — Total Rewards By Program (Horizontal Bar) */}
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <s-stack direction="block" gap="base">
+                                    <s-stack direction="block" gap="none">
+                                        <s-heading variant="headingXs">Total Rewards By Program</s-heading>
+                                        <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
+                                    </s-stack>
+                                    {isFetching
+                                        ? <SkeletonLines lines={6} height={16} />
+                                        : rewardsByProgram.length === 0
+                                            ? <ChartEmptyState />
+                                            : (
+                                                <ResponsiveContainer width="100%" height={280}>
+                                                    <BarChart layout="vertical" data={rewardsByProgram}
+                                                        margin={{ top: 8, right: 24, left: 8, bottom: 0 }}
+                                                        barCategoryGap="25%">
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" horizontal={false} />
+                                                        <XAxis type="number"
+                                                            tick={{ fontSize: 11, fill: "#8c9196" }}
+                                                            tickLine={false} axisLine={false}
+                                                            tickFormatter={(v) => `${currencySymbols[selectedCurrency] || ""}${v}`} />
+                                                        <YAxis type="category" dataKey="name" width={90}
+                                                            tick={{ fontSize: 12, fill: "#202223" }}
+                                                            tickLine={false} axisLine={false} />
+                                                        <RechartsTooltip
+                                                            content={<CustomChartTooltip currencyCode={selectedCurrency} />} />
+                                                        <Bar dataKey="value" name="Rewards" radius={[0, 4, 4, 0]}>
+                                                            {rewardsByProgram.map((_, idx) => (
+                                                                <Cell key={`cell-${idx}`}
+                                                                    fill={PROGRAM_COLORS[idx % PROGRAM_COLORS.length]} />
+                                                            ))}
+                                                        </Bar>
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            )
+                                    }
+                                </s-stack>
+                            </s-section>
+                        </s-grid>
+
+                    </s-stack>
+
+                    <div style={{ marginBlockEnd: "32px" }} />
+                </s-stack>
+            </s-page>
+        </s-box>
     );
 }
+

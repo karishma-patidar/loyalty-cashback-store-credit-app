@@ -194,45 +194,38 @@ export default function Index() {
 
   return (
     <s-page heading="Dashboard">
-      <s-stack direction="block" gap="base">
-        {/* Status Card */}
-        <s-box
-          padding="base"
-          background="surface"
-          borderWidth="base"
-          borderRadius="base"
-        >
-          <s-stack direction="block" gap="tight">
-            <div className="flex items-center justify-between">
-              <s-stack direction="inline" gap="tight" align="center">
-                <span className="font-semibold text-gray-900">
-                  Loyalty Cashback Store Credit
-                </span>
-                {isActive ? (
-                  <span className="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    Active
-                  </span>
-                ) : (
-                  <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    Inactive
-                  </span>
-                )}
-              </s-stack>
-              <s-button
-                variant="secondary"
-                onClick={handleToggleActive}
-                loading={fetcher.state === "submitting"}
-              >
-                {isActive ? "Deactivate" : "Activate"}
-              </s-button>
-            </div>
-            <p className="text-sm text-gray-500">
-              {isActive
-                ? "The app is currently running. Your programs are active and store credit is being distributed."
-                : "The app is currently paused. No store credit will be distributed until you reactivate."}
-            </p>
+
+      <s-section>
+        <s-stack direction="inline" gap="base" justifyContent="space-between" alignment="center">
+          <s-stack direction="inline" gap="base">
+            <s-heading>Loyalty Cashback Store Credit</s-heading>
+            {isActive ? (
+              <span className="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                Active
+              </span>
+            ) : (
+              <span className="bg-gray-100 text-gray-600 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                Inactive
+              </span>
+            )}
           </s-stack>
-        </s-box>
+
+          <s-button
+            variant={isActive ? "primary" : "critical"}
+            tone={isActive ? "critical" : "primary"}
+            onClick={handleToggleActive}
+            loading={fetcher.state === "submitting"}
+          >
+            {isActive ? "Deactivate" : "Activate"}
+          </s-button>
+        </s-stack>
+        <s-paragraph>
+          {isActive
+            ? "The app is currently running. Your programs are active and store credit is being distributed."
+            : "The app is currently paused. No store credit will be distributed until you reactivate."}</s-paragraph>
+      </s-section>
+
+      <s-section direction="block" gap="base">
 
         {/* Setup Guide */}
         <s-box
@@ -312,7 +305,7 @@ export default function Index() {
         </s-box>
 
 
-      </s-stack>
+      </s-section>
     </s-page>
   );
 }

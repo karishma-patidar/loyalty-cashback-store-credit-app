@@ -93,7 +93,7 @@ export async function addStoreCredit(
         }
       }
     `;
-    
+
     console.log("GraphQL Request [getCustomerStoreCreditAccount] variables:", { id: customerId });
     const accountRes = await admin.graphql(getAccountQuery, { variables: { id: customerId } });
     const accountData = await accountRes.json();
@@ -262,7 +262,7 @@ export function calculateCashbackAmount(program: ProgramSettings, orderPayload: 
   if (program.programType === "product") {
     console.log("[~] Calculating product-based cashback...");
     const lineItems = orderPayload.line_items || [];
-    
+
     for (const item of lineItems) {
       const itemPrice = parseFloat(String(item.price || "0"));
       const itemQty = parseInt(String(item.quantity || "1"), 10);
@@ -288,7 +288,7 @@ export function calculateCashbackAmount(program: ProgramSettings, orderPayload: 
   } else {
     console.log("[~] Calculating order-based cashback...");
     const orderTotal = parseFloat(orderPayload.current_total_price || "0");
-    
+
     if (
       program.amountType === "Percentage" ||
       program.cashbackPercentage !== undefined

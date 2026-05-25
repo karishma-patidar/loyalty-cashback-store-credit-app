@@ -69,7 +69,14 @@ export async function loader({ request }) {
 
   try {
     const ShopModel = getShopModel(shop);
-    const docs = await ShopModel.find({});
+    if (ShopModel) {
+      await ShopModel.updateMany(
+        { "events.type": "Custom Program" },
+        { $set: { "events.$[elem].type": "Cashback" } },
+        { arrayFilters: [{ "elem.type": "Custom Program" }] }
+      );
+    }
+    const docs = ShopModel ? await ShopModel.find({}) : [];
 
     for (const doc of docs) {
       if (doc.events && Array.isArray(doc.events)) {
