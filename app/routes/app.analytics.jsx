@@ -236,13 +236,12 @@ const TOOLTIPS = {
     issuedCredit: "The total value of loyalty cashback credits issued from reward programs and manual adjustments, excluding refunded or debited credits.",
     appliedCredit: "The total value of loyalty cashback credits redeemed and applied to customer orders.",
     debitRefunded: "The total amount of credits refunded, reversed, or removed from customer balances.",
-    redemptionRate: "The percentage of issued credits that were actually applied to purchases.",
+    redemptionRate: "The percentage of issued credits that were actually applied to purchases (Redemption rate = Applied credit / Issued credit × 100)",
     totalOrders: "Number of orders where loyalty cashback credit was issued or redeemed.",
     totalSales: "Combined sales value generated from orders associated with cashback credits.",
-    aov: "Average order value for orders containing loyalty cashback credits.",
+    aov: "Average order value for orders where store credit was issued from loyalty cashback credit (AOV = Total sales of orders / Total orders)",
     totalCustomersRedeem: "Total customers who redeemed loyalty cashback credits.",
     totalDistributedCustomers: "Number of customers who received cashback credits.",
-    totalDistributedLocations: "Number of company locations where cashback credits were distributed.",
 };
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
@@ -411,10 +410,8 @@ export const loader = async ({ request }) => {
 
     const aov = totalOrders > 0 ? Number((totalSales / totalOrders).toFixed(2)) : 0;
 
-    // ── Fetch store credit transactions (specifically for debitRefunded / locations)
+    // ── Fetch store credit transactions (specifically for debitRefunded)
     let debitRefunded = 0;
-    let totalDistributedLocations = 0;
-    const locationsSet = new Set();
 
     try {
         const txNodes = await getStoreCreditTransactions(admin);
@@ -424,14 +421,11 @@ export const loader = async ({ request }) => {
             if (txDate < start || txDate > end) continue;
             const amount = parseFloat(node.amount?.amount || "0");
             const type = node.transactionType;
-            const owner = node.account?.owner;
 
             if (type === "EXPIRATION" || (type === "ADJUST" && amount < 0) || type === "REVERSION") {
                 debitRefunded += Math.abs(amount);
             }
-            if (owner?.__typename === "CompanyLocation") locationsSet.add(owner.id);
         }
-        totalDistributedLocations = locationsSet.size;
     } catch (err) {
         console.error("Error fetching Shopify transactions:", err);
     }
@@ -465,18 +459,18 @@ export const loader = async ({ request }) => {
         const custId = ev.customerId;
         if (!custId) continue;
         const custName = ev.customerName || "Anonymous Customer";
-        
+
         if (!customersMap[custId]) {
-            customersMap[custId] = { 
-                name: custName, 
-                redeemedAmount: 0, 
+            customersMap[custId] = {
+                name: custName,
+                redeemedAmount: 0,
                 totalSpending: 0,
                 orderIds: new Set()
             };
         }
-        
+
         customersMap[custId].redeemedAmount += ev.redeemedAmount || 0;
-        
+
         if (ev.orderId && !customersMap[custId].orderIds.has(ev.orderId)) {
             if ((ev.redeemedAmount || 0) > 0) {
                 customersMap[custId].orderIds.add(ev.orderId);
@@ -558,7 +552,6 @@ export const loader = async ({ request }) => {
             aov,
             totalCustomersRedeem,
             totalDistributedCustomers,
-            totalDistributedLocations,
         },
         topPrograms,
         topCustomers,
@@ -1081,55 +1074,52 @@ export default function Analytics() {
 
                     {/* ── SECTION 3: Customers ── */}
                     <s-stack direction="block" gap="base">
-                        <s-heading variant="headingSm" className="text-gray-500">Customer Insights</s-heading>
+                        <s-heading variant="headingSm" className="text-gray-500 w-full block" style={{ borderBottom: ".125rem dotted rgb(221, 224, 228)", paddingBottom: "4px" }}>Customers</s-heading>
                         <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
                             <s-stack direction="block" gap="base">
-                                <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base" className="w-full">
+                                <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base" className="w-full">
                                     <MetricCell id="redeem" label="Total customers redeem credit" tooltip={TOOLTIPS.totalCustomersRedeem}
                                         value={metrics.totalCustomersRedeem} loading={isFetching} />
                                     <MetricCell id="distributed" label="Total distributed customers" tooltip={TOOLTIPS.totalDistributedCustomers}
                                         value={metrics.totalDistributedCustomers} loading={isFetching} />
-                                    <MetricCell id="locations" label="Total distributed company locations" tooltip={TOOLTIPS.totalDistributedLocations}
-                                        value={metrics.totalDistributedLocations} loading={isFetching} />
                                 </s-grid>
                                 <s-divider />
-                                <s-stack direction="block" gap="tight">
-                                    <s-heading variant="headingXs">Top customers redeem credits</s-heading>
+                                <s-stack direction="block" gap="base">
+                                    <s-heading variant="headingXs" className="w-full block" >Top customers redeem credits</s-heading>
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topCustomers.length === 0
                                             ? <s-box padding="base"><s-text color="subdued">No customers found.</s-text></s-box>
-                                            : <s-table>
-                                                <s-table-header-row>
-                                                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight py-2 px-3 text-left">
-                                                        Customer
-                                                    </s-table-header>
-                                                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight py-2 px-3 text-right">
-                                                        Redeemed credits
-                                                    </s-table-header>
-                                                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight py-2 px-3 text-right">
-                                                        Total spending
-                                                    </s-table-header>
-                                                </s-table-header-row>
-                                                <s-table-body>
-                                                    {topCustomers.map((c, idx) => (
-                                                        <s-table-row key={idx}>
-                                                            <s-table-cell className="py-3 px-3 text-left">
-                                                                <s-text color="subdued">{c.name}</s-text>
-                                                            </s-table-cell>
-                                                            <s-table-cell className="py-3 px-3 text-right">
-                                                                <s-text variant="bold">
-                                                                    {formatCurrency(c.redeemedAmount, selectedCurrency)}
-                                                                </s-text>
-                                                            </s-table-cell>
-                                                            <s-table-cell className="py-3 px-3 text-right">
-                                                                <s-text color="subdued">
-                                                                    {formatCurrency(c.totalSpending, selectedCurrency)}
-                                                                </s-text>
-                                                            </s-table-cell>
-                                                        </s-table-row>
-                                                    ))}
-                                                </s-table-body>
-                                            </s-table>
+                                            : <s-stack direction="block" gap="none">
+                                                {/* Header Row */}
+                                                <s-grid gridTemplateColumns="2.5fr 1fr 1fr" gap="tight" className="w-full">
+                                                    <s-box paddingBlock="tight">
+                                                        <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Customer</s-text>
+                                                    </s-box>
+                                                    <s-box paddingBlock="tight" style={{ textAlign: "right" }}>
+                                                        <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Redeemed credits</s-text>
+                                                    </s-box>
+                                                    <s-box paddingBlock="tight" style={{ textAlign: "right" }}>
+                                                        <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Total spending</s-text>
+                                                    </s-box>
+                                                </s-grid>
+                                                {topCustomers.map((c) => (
+                                                    <s-grid key={c.name} gridTemplateColumns="2.5fr 1fr 1fr" gap="base" className="w-full">
+                                                        <s-box paddingBlock="base">
+                                                            <s-text color="subdued">{c.name}</s-text>
+                                                        </s-box>
+                                                        <s-box paddingBlock="base" style={{ textAlign: "right" }}>
+                                                            <s-text variant="bold">
+                                                                {formatCurrency(c.redeemedAmount, selectedCurrency)}
+                                                            </s-text>
+                                                        </s-box>
+                                                        <s-box paddingBlock="base" style={{ textAlign: "right" }}>
+                                                            <s-text color="subdued">
+                                                                {formatCurrency(c.totalSpending, selectedCurrency)}
+                                                            </s-text>
+                                                        </s-box>
+                                                    </s-grid>
+                                                ))}
+                                            </s-stack>
                                     }
                                 </s-stack>
                             </s-stack>

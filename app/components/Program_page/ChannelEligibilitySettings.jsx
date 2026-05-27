@@ -23,13 +23,6 @@ export function ChannelEligibilitySettings({
                 }
               />
               <s-checkbox
-                label="Point of Sale (POS)"
-                checked={channels.pos}
-                onInput={(e) =>
-                  setChannels({ ...channels, pos: e.target.checked })
-                }
-              />
-              <s-checkbox
                 label="Draft Order"
                 checked={channels.draft}
                 onInput={(e) =>
@@ -59,21 +52,6 @@ export function ChannelEligibilitySettings({
                   })
                 }
               />
-              <s-checkbox
-                label="B2B (Business to Business)"
-                checked={eligibility.b2b}
-                onInput={(e) =>
-                  setEligibility({
-                    ...eligibility,
-                    b2b: e.target.checked,
-                  })
-                }
-              />
-              <s-box paddingInlineStart="6">
-                <s-text color="subdued" variant="small">
-                  Accounts associated with / buying from company locations
-                </s-text>
-              </s-box>
             </s-stack>
           </s-box>
         </s-box>

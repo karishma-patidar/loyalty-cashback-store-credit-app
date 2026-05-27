@@ -266,7 +266,7 @@ export default function NewProgram() {
             "You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.",
           msgProduct:
             initialProgram.msgProduct ||
-            "Receive {loyalty_credit_amount} store credit when purchasing each item.",
+            "Receive <strong>{loyalty_credit_amount}</strong> store credit when purchasing each item.",
           notifyEmail: initialProgram.notifyEmail ?? false,
           currentStatus: initialProgram.status || "Active",
           showCartDrawerPoints: initialProgram.showCartDrawerPoints ?? true,
