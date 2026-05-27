@@ -14,7 +14,7 @@ import {
   setShopPrograms,
   deleteShopPrograms,
 } from "../services/graphql.server";
-import connectMongoDB, { getShopModel } from "../db.mongodb.server";
+import connectMongoDB, { getShopModel, migrateShopData } from "../db.mongodb.server";
 import {
   IndexFilters,
   useSetIndexFiltersMode,
@@ -29,14 +29,8 @@ export const loader = async ({ request }) => {
   await connectMongoDB();
   let currency = "INR";
   try {
+    await migrateShopData(session.shop);
     const ShopModel = getShopModel(session.shop);
-    if (ShopModel) {
-      await ShopModel.updateMany(
-        { "events.type": "Custom Program" },
-        { $set: { "events.$[elem].type": "Cashback" } },
-        { arrayFilters: [{ "elem.type": "Custom Program" }] }
-      );
-    }
     const docs = ShopModel ? await ShopModel.find({}) : [];
 
     // Process each program to assign its dynamic issued amount
@@ -49,11 +43,11 @@ export const loader = async ({ request }) => {
           for (const ev of doc.events) {
             if (ev.status === "Completed") {
               if (ev.currency) currency = ev.currency;
-              const evIsCustom = ev.type === "Custom Program";
+              const evIsCustom = ev.programType === "Custom Program";
               if (isCustom && evIsCustom) {
-                totalIssued += Number(ev.amount || 0);
+                totalIssued += Number(ev.issuedAmount || 0);
               } else if (!isCustom && !evIsCustom) {
-                totalIssued += Number(ev.amount || 0);
+                totalIssued += Number(ev.issuedAmount || 0);
               }
             }
           }

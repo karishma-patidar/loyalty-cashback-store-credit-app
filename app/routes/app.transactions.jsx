@@ -26,6 +26,7 @@ import { authenticate } from "../shopify.server";
 import connectMongoDB, {
   getShopModel,
   syncMongoStoreSession,
+  migrateShopData,
 } from "../db.mongodb.server";
 
 // Helper to format date cleanly
@@ -70,10 +71,11 @@ export async function loader({ request }) {
   try {
     const ShopModel = getShopModel(shop);
     if (ShopModel) {
+      await migrateShopData(shop);
       await ShopModel.updateMany(
-        { "events.type": "Custom Program" },
-        { $set: { "events.$[elem].type": "Cashback" } },
-        { arrayFilters: [{ "elem.type": "Custom Program" }] }
+        { "events.programType": "Custom Program" },
+        { $set: { "events.$[elem].programType": "Cashback" } },
+        { arrayFilters: [{ "elem.programType": "Custom Program" }] }
       );
     }
     const docs = ShopModel ? await ShopModel.find({}) : [];
@@ -87,9 +89,9 @@ export async function loader({ request }) {
 
           // Filter by tab type
           if (activeTabId === "1") {
-            if (ev.type !== "Custom Program") continue;
+            if ((ev.programType || ev.type) !== "Custom Program") continue;
           } else {
-            if (ev.type === "Custom Program") continue;
+            if ((ev.programType || ev.type) === "Custom Program") continue;
           }
 
           allTransactions.push({
@@ -110,12 +112,13 @@ export async function loader({ request }) {
               ? new Date(ev.processAt).toISOString()
               : null,
             customerName: ev.customerName,
-            amount: Number(ev.amount || 0),
+            issuedAmount: Number(ev.issuedAmount || 0),
+            redeemedAmount: Number(ev.redeemedAmount || 0),
             currency: ev.currency,
             status: ev.status,
             emailStatus: ev.emailStatus,
             emailFailReason: ev.emailFailReason || "",
-            type: ev.type,
+            type: ev.programType || ev.type || "Cashback",
           });
         }
       }
@@ -198,9 +201,9 @@ export async function action({ request }) {
           for (const ev of doc.events) {
             // 1. Program Type Filter
             if (tab === "1") {
-              if (ev.type !== "Custom Program") continue;
+              if ((ev.programType || ev.type) !== "Custom Program") continue;
             } else {
-              if (ev.type === "Custom Program") continue;
+              if ((ev.programType || ev.type) === "Custom Program") continue;
             }
 
             // 2. Search Query Filter
@@ -221,11 +224,12 @@ export async function action({ request }) {
               orderId: ev.orderId,
               orderName: ev.orderName,
               customerName: ev.customerName,
-              amount: Number(ev.amount || 0),
+              issuedAmount: Number(ev.issuedAmount || 0),
+              redeemedAmount: Number(ev.redeemedAmount || 0),
               currency: ev.currency,
               status: ev.status,
               emailStatus: ev.emailStatus,
-              type: ev.type,
+              type: ev.programType || ev.type || "Cashback",
               createdAt: ev.createdAt
                 ? new Date(ev.createdAt)
                 : new Date(doc.createdAt),
@@ -249,9 +253,9 @@ export async function action({ request }) {
       } else if (sortValue === "oldest") {
         return a.createdAt.getTime() - b.createdAt.getTime();
       } else if (sortValue === "amount-high") {
-        return b.amount - a.amount;
+        return (b.issuedAmount || b.redeemedAmount || 0) - (a.issuedAmount || a.redeemedAmount || 0);
       } else if (sortValue === "amount-low") {
-        return a.amount - b.amount;
+        return (a.issuedAmount || a.redeemedAmount || 0) - (b.issuedAmount || b.redeemedAmount || 0);
       }
       return 0;
     });
@@ -326,7 +330,8 @@ export async function action({ request }) {
       "Issued date",
       "Customer",
       "Company name",
-      "Amount",
+      "Issued Amount",
+      "Redeemed Amount",
       "Currency",
       "Issue status",
       "Error message",
@@ -341,7 +346,8 @@ export async function action({ request }) {
       formatDate(t.issuedAt),
       t.customerName,
       "", // Company name (blank)
-      t.amount,
+      t.issuedAmount,
+      t.redeemedAmount,
       t.currency,
       String(t.status || "completed").toLowerCase(),
       "", // Error message (blank)
@@ -402,10 +408,10 @@ export default function Transactions() {
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     } else if (sortValue === "amount desc") {
       // High to low
-      return Number(b.amount || 0) - Number(a.amount || 0);
+      return Number(b.issuedAmount || b.redeemedAmount || 0) - Number(a.issuedAmount || a.redeemedAmount || 0);
     } else if (sortValue === "amount asc") {
       // Low to high
-      return Number(a.amount || 0) - Number(b.amount || 0);
+      return Number(a.issuedAmount || a.redeemedAmount || 0) - Number(b.issuedAmount || b.redeemedAmount || 0);
     }
     return 0;
   });
@@ -549,7 +555,8 @@ export default function Transactions() {
         issuedAt,
         processAt,
         customerName,
-        amount,
+        issuedAmount,
+        redeemedAmount,
         currency,
         status,
         emailStatus,
@@ -594,8 +601,8 @@ export default function Transactions() {
             </a>
           </IndexTable.Cell>
           <IndexTable.Cell>
-            <Text variant="bodyMd" fontWeight="bold" as="span">
-              +{Number(amount).toFixed(2)} {currency}
+            <Text variant="bodyMd" fontWeight="bold" as="span" tone={issuedAmount > 0 ? "success" : undefined}>
+              {issuedAmount > 0 ? `+${Number(issuedAmount).toFixed(2)}` : "-"} {currency}
             </Text>
           </IndexTable.Cell>
           <IndexTable.Cell>
@@ -643,7 +650,8 @@ export default function Transactions() {
                   issuedAt,
                   processAt,
                   customerName,
-                  amount,
+                  issuedAmount,
+                  redeemedAmount,
                   currency,
                   status,
                   emailStatus,
@@ -785,10 +793,10 @@ export default function Transactions() {
   // Polaris IndexFilters requires sort values in "field direction" format
   // (split by space internally to determine which arrow to highlight)
   const sortOptions = [
-    { label: "Creation date",        value: "date desc",    directionLabel: "Newest to oldest" },
-    { label: "Creation date",        value: "date asc",     directionLabel: "Oldest to newest" },
-    { label: "Store credit amount",  value: "amount desc",  directionLabel: "Highest to lowest" },
-    { label: "Store credit amount",  value: "amount asc",   directionLabel: "Lowest to highest" },
+    { label: "Creation date", value: "date desc", directionLabel: "Newest to oldest" },
+    { label: "Creation date", value: "date asc", directionLabel: "Oldest to newest" },
+    { label: "Store credit amount", value: "amount desc", directionLabel: "Highest to lowest" },
+    { label: "Store credit amount", value: "amount asc", directionLabel: "Lowest to highest" },
   ];
 
   const handleSortChange = useCallback((value) => {
@@ -830,7 +838,7 @@ export default function Transactions() {
             {transactions.length === 0 ? (
               <EmptyState
                 heading="No transactions recorded"
-                image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-transactions.png"
+                image="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT7dBIEy6r7yQ4KG2HydPxQmpTnQINwJZN5fw&s"
               >
                 <p>
                   There are currently no store credit rewards issued or
@@ -887,7 +895,7 @@ export default function Transactions() {
                         { title: "Created At" },
                         { title: "Issued At" },
                         { title: "Customer Name" },
-                        { title: "Store Credit" },
+                        { title: "Earned/Issued" },
                         { title: "Status" },
                         { title: "Email Status" },
                         { title: "Actions" },
@@ -968,7 +976,16 @@ export default function Transactions() {
                     term: "Store Credit Issued",
                     description: (
                       <Text variant="bodyMd" fontWeight="bold" tone="success">
-                        {Number(selectedTransaction.amount).toFixed(2)}{" "}
+                        {Number(selectedTransaction.issuedAmount || 0).toFixed(2)}{" "}
+                        {selectedTransaction.currency}
+                      </Text>
+                    ),
+                  },
+                  {
+                    term: "Store Credit Redeemed",
+                    description: (
+                      <Text variant="bodyMd" fontWeight="bold" tone="critical">
+                        {Number(selectedTransaction.redeemedAmount || 0).toFixed(2)}{" "}
                         {selectedTransaction.currency}
                       </Text>
                     ),

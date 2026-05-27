@@ -41,13 +41,14 @@ const eventSchema = new mongoose.Schema({
   orderName: String,
   customerId: String,
   customerName: String,
-  amount: Number,
+  issuedAmount: Number,
   currency: String,
   exchangeRate: Number,
   status: String,
   emailStatus: String,
   emailFailReason: String,
-  type: String,
+  redeemedAmount: Number,
+  programType: String,
   issuedAt: Date,
   processAt: Date,
   expiresAt: Date,
@@ -68,6 +69,48 @@ export function getShopModel(shop) {
 
 // Alias for getShopModel to support both import conventions in route and processor files
 export const getCustomerModel = getShopModel;
+
+export async function migrateShopData(shop) {
+  if (!shop) return;
+  try {
+    const ShopModel = getShopModel(shop);
+    if (!ShopModel) return;
+
+    const rawCollection = ShopModel.collection;
+    const docs = await rawCollection.find({}).toArray();
+    for (const doc of docs) {
+      let changed = false;
+      if (doc.events && Array.isArray(doc.events)) {
+        for (const ev of doc.events) {
+          // Rename amount to issuedAmount
+          if ('amount' in ev) {
+            ev.issuedAmount = ev.amount;
+            delete ev.amount;
+            changed = true;
+          }
+          // Rename type to programType
+          if ('type' in ev) {
+            ev.programType = ev.type;
+            delete ev.type;
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        await rawCollection.updateOne({ _id: doc._id }, { $set: { events: doc.events } });
+      }
+    }
+
+    // Now run the "Custom Program" to "Cashback" migration on programType
+    await ShopModel.updateMany(
+      { "events.programType": "Custom Program" },
+      { $set: { "events.$[elem].programType": "Cashback" } },
+      { arrayFilters: [{ "elem.programType": "Custom Program" }] }
+    );
+  } catch (err) {
+    console.error(`[Migration Error] Failed to migrate shop data for ${shop}:`, err);
+  }
+}
 
 export async function syncMongoStoreSession(session) {
   if (!session) return;

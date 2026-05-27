@@ -10,6 +10,44 @@ import {
 import { connectMongoDB, getCustomerModel } from '../db.mongodb.server';
 
 /**
+ * Helper to calculate the store credit amount applied/redeemed on an order.
+ * Filters out duplicate transaction kinds (e.g. AUTHORIZATION vs CAPTURE) to prevent double counting.
+ */
+function extractRedeemedAmount(txs: any[], hasStoreCreditGateway: boolean, totalDiscounts: string): number {
+  const storeCreditTxs = (txs || []).filter((tx) => {
+    const gatewayLower = (tx.gateway || "").toLowerCase();
+    const isStoreCredit = gatewayLower.includes("store_credit") || gatewayLower.includes("store credit");
+    const isSuccess = !tx.status || tx.status.toUpperCase() === "SUCCESS";
+    return isStoreCredit && isSuccess;
+  });
+
+  let redeemedAmount = 0;
+  const hasCaptureOrSale = storeCreditTxs.some(
+    (tx) => tx.kind === "CAPTURE" || tx.kind === "SALE"
+  );
+
+  if (hasCaptureOrSale) {
+    for (const tx of storeCreditTxs) {
+      if (tx.kind === "CAPTURE" || tx.kind === "SALE") {
+        redeemedAmount += parseFloat(tx.amountSet?.presentmentMoney?.amount || "0");
+      }
+    }
+  } else {
+    for (const tx of storeCreditTxs) {
+      if (tx.kind === "AUTHORIZATION") {
+        redeemedAmount += parseFloat(tx.amountSet?.presentmentMoney?.amount || "0");
+      }
+    }
+  }
+
+  if (redeemedAmount === 0 && hasStoreCreditGateway) {
+    redeemedAmount = parseFloat(totalDiscounts || "0");
+  }
+
+  return Number(redeemedAmount.toFixed(2));
+}
+
+/**
  * Centralized order webhook handler to process order-based store credit rewards.
  * Supports both ORDERS_CREATE (creates unpaid orders with "Pending" status)
  * and ORDERS_FULFILLED (issues store credit, saves with "Completed" status).
@@ -122,10 +160,43 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
       return;
     }
 
+    const gateways = orderPayload.payment_gateway_names || [];
+    const hasStoreCreditGateway = gateways.some((g: string) => g.toLowerCase().includes("store_credit") || g.toLowerCase().includes("store credit"));
+
     const cashbackAmount = calculateCashbackAmount(program, orderPayload);
-    if (cashbackAmount <= 0) {
-      console.log(`[-] Cashback amount is 0 for ${orderName}. Skipping.`);
+    if (cashbackAmount <= 0 && !hasStoreCreditGateway) {
+      console.log(`[-] Cashback amount is 0 and no store credit used for ${orderName}. Skipping.`);
       return;
+    }
+
+    let redeemedAmount = 0;
+    try {
+      const getOrderTransactionsQuery = `#graphql
+        query getOrderTransactions($id: ID!) {
+          order(id: $id) {
+            transactions(first: 10) {
+              gateway
+              kind
+              status
+              amountSet {
+                presentmentMoney {
+                  amount
+                }
+              }
+            }
+          }
+        }
+      `;
+      const orderGid = orderId.startsWith("gid://") ? orderId : `gid://shopify/Order/${orderId}`;
+      const res = await adminClient.graphql(getOrderTransactionsQuery, { variables: { id: orderGid } });
+      const data = await res.json();
+      const txs = data?.data?.order?.transactions || [];
+      redeemedAmount = extractRedeemedAmount(txs, hasStoreCreditGateway, orderPayload.total_discounts || "0");
+      if (redeemedAmount > 0) {
+        console.log(`[Store Credit Applied] Applied/used credit of ${redeemedAmount} for order ${orderName} (${orderId})`);
+      }
+    } catch (err) {
+      console.error("❌ Error fetching order transactions for redeemedAmount on ORDERS_CREATE:", err);
     }
 
     console.log(`[+] Saving order ${orderName} as PENDING...`);
@@ -135,11 +206,12 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
       orderName,
       customerId,
       customerName,
-      amount: cashbackAmount,
+      issuedAmount: cashbackAmount,
       currency: orderPayload.presentment_currency || orderPayload.currency || 'USD',
       status: "Pending",
       emailStatus: "Not Sent",
-      type: program.programType === "custom" ? "Custom Program" : "Cashback",
+      programType: program.programType === "custom" ? "Custom Program" : "Cashback",
+      redeemedAmount: redeemedAmount,
       issuedAt: null,
       createdAt: new Date(),
     };
@@ -210,6 +282,16 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
               quantity
             }
           }
+          transactions(first: 10) {
+            gateway
+            kind
+            status
+            amountSet {
+              presentmentMoney {
+                amount
+              }
+            }
+          }
           note
         }
       }
@@ -261,6 +343,13 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
     const presentmentAmt = parseFloat(fullOrder.currentTotalPriceSet?.presentmentMoney?.amount || "0");
     const shopAmt = parseFloat(fullOrder.currentTotalPriceSet?.shopMoney?.amount || "0");
     const exchangeRate = presentmentAmt > 0 ? (shopAmt / presentmentAmt) : 1;
+
+    const gateways = orderPayload.payment_gateway_names || [];
+    const hasStoreCreditGateway = gateways.some((g: string) => g.toLowerCase().includes("store_credit") || g.toLowerCase().includes("store credit"));
+    const redeemedAmount = extractRedeemedAmount(fullOrder.transactions, hasStoreCreditGateway, orderPayload.total_discounts || "0");
+    if (redeemedAmount > 0) {
+      console.log(`[Store Credit Applied] Applied/used credit of ${redeemedAmount} for order ${orderName} (${orderId})`);
+    }
 
     const cashbackAmount = calculateCashbackAmount(program, mappedOrder);
     if (cashbackAmount <= 0) return;
@@ -320,7 +409,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           {
             $set: {
               "events.$.status": "Pending",
-              "events.$.amount": cashbackAmount,
+              "events.$.issuedAmount": cashbackAmount,
               "events.$.currency": currencyCode,
               "events.$.exchangeRate": exchangeRate,
               "events.$.emailStatus": "Not Sent",
@@ -328,6 +417,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
               "events.$.processAt": processAt,
               "events.$.expiresAt": expiresAt,
               "events.$.shouldNotify": shouldNotify,
+              "events.$.redeemedAmount": redeemedAmount,
             }
           }
         );
@@ -339,12 +429,13 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           orderName,
           customerId,
           customerName,
-          amount: cashbackAmount,
+          issuedAmount: cashbackAmount,
           currency: currencyCode,
           exchangeRate: exchangeRate,
           status: "Pending",
           emailStatus: "Not Sent",
-          type: program.programType === "custom" ? "Custom Program" : "Cashback",
+          programType: program.programType === "custom" ? "Custom Program" : "Cashback",
+          redeemedAmount: redeemedAmount,
           issuedAt: null,
           processAt: processAt,
           expiresAt: expiresAt,
@@ -402,12 +493,13 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           {
             $set: {
               "events.$.status": "Completed",
-              "events.$.amount": cashbackAmount,
+              "events.$.issuedAmount": cashbackAmount,
               "events.$.currency": currencyCode,
               "events.$.exchangeRate": exchangeRate,
               "events.$.emailStatus": finalEmailStatus,
               "events.$.emailFailReason": finalEmailFailReason,
               "events.$.issuedAt": new Date(),
+              "events.$.redeemedAmount": redeemedAmount,
             }
           }
         );
@@ -419,13 +511,14 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           orderName,
           customerId,
           customerName,
-          amount: cashbackAmount,
+          issuedAmount: cashbackAmount,
           currency: currencyCode,
           exchangeRate: exchangeRate,
           status: "Completed",
           emailStatus: finalEmailStatus,
           emailFailReason: finalEmailFailReason,
-          type: program.programType === "custom" ? "Custom Program" : "Cashback",
+          programType: program.programType === "custom" ? "Custom Program" : "Cashback",
+          redeemedAmount: redeemedAmount,
           issuedAt: new Date(),
           createdAt: new Date(),
         };
@@ -485,6 +578,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
               "events.$.emailStatus": "Failed",
               "events.$.emailFailReason": errorMsg,
               "events.$.issuedAt": new Date(),
+              "events.$.redeemedAmount": redeemedAmount,
             }
           }
         );
@@ -495,12 +589,13 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
           orderName,
           customerId,
           customerName,
-          amount: cashbackAmount,
+          issuedAmount: cashbackAmount,
           currency: currencyCode,
           status: "Failed",
           emailStatus: "Failed",
           emailFailReason: errorMsg,
-          type: program.programType === "custom" ? "Custom Program" : "Cashback",
+          programType: program.programType === "custom" ? "Custom Program" : "Cashback",
+          redeemedAmount: redeemedAmount,
           issuedAt: new Date(),
           createdAt: new Date(),
         };
@@ -572,7 +667,7 @@ export async function processDelayedCredits(shop: string, adminClient: AdminClie
           const storeCreditResult = await addStoreCredit(
             adminClient,
             ev.customerId,
-            ev.amount,
+            ev.issuedAmount,
             ev.currency || 'USD',
             expiresAt,
             shouldNotify,
@@ -619,7 +714,7 @@ export async function processDelayedCredits(shop: string, adminClient: AdminClie
                   }
                 }
               `;
-              const appNote = `[Loyalty App] Issued ${ev.amount} ${ev.currency || 'USD'} store credit (Delayed).`;
+              const appNote = `[Loyalty App] Issued ${ev.issuedAmount} ${ev.currency || 'USD'} store credit (Delayed).`;
               
               const getOrderNoteQuery = `#graphql
                 query getOrderNote($id: ID!) {

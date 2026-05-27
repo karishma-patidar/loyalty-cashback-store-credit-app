@@ -16,7 +16,7 @@ import {
     Cell,
 } from "recharts";
 import { authenticate } from "../shopify.server";
-import connectMongoDB, { getShopModel } from "../db.mongodb.server";
+import connectMongoDB, { getShopModel, migrateShopData } from "../db.mongodb.server";
 import { getStoreCreditTransactions } from "../services/storeCredit.server";
 
 export const getenabledPresentmentCurrencies = async () => {
@@ -68,6 +68,9 @@ const GET_ORDERS_QUERY = `#graphql
             amount
             currencyCode
           }
+        }
+        customer {
+          id
         }
       }
     }
@@ -233,7 +236,7 @@ const TOOLTIPS = {
     issuedCredit: "The total value of loyalty cashback credits issued from reward programs and manual adjustments, excluding refunded or debited credits.",
     appliedCredit: "The total value of loyalty cashback credits redeemed and applied to customer orders.",
     debitRefunded: "The total amount of credits refunded, reversed, or removed from customer balances.",
-    redemptionRate: "Percentage of issued loyalty cashback credits successfully redeemed by customers.",
+    redemptionRate: "The percentage of issued credits that were actually applied to purchases.",
     totalOrders: "Number of orders where loyalty cashback credit was issued or redeemed.",
     totalSales: "Combined sales value generated from orders associated with cashback credits.",
     aov: "Average order value for orders containing loyalty cashback credits.",
@@ -284,14 +287,7 @@ export const loader = async ({ request }) => {
 
     await connectMongoDB();
     try {
-        const ShopModel = getShopModel(shop);
-        if (ShopModel) {
-            await ShopModel.updateMany(
-                { "events.type": "Custom Program" },
-                { $set: { "events.$[elem].type": "Cashback" } },
-                { arrayFilters: [{ "elem.type": "Custom Program" }] }
-            );
-        }
+        await migrateShopData(shop);
     } catch (e) {
         console.error("Error migrating old events in analytics loader:", e);
     }
@@ -346,10 +342,11 @@ export const loader = async ({ request }) => {
                         orderName: ev.orderName,
                         customerId: ev.customerId,
                         customerName: ev.customerName,
-                        amount: Number(ev.amount || 0),
+                        amount: Number(ev.issuedAmount || 0),
+                        redeemedAmount: Number(ev.redeemedAmount || 0),
                         currency: ev.currency,
                         status: ev.status,
-                        type: ev.type || "Cashback",
+                        type: ev.programType || "Cashback",
                         createdAt: eventDate,
                     };
                     allTimeEvents.push(eventObj);
@@ -384,9 +381,11 @@ export const loader = async ({ request }) => {
 
     // ── Fetch order sales
     let totalSales = 0;
-    if (uniqueOrderIds.length > 0) {
+    const orderSpendingMap = {};
+    const allRangeOrderIds = Array.from(new Set(filteredRangeEvents.map((e) => e.orderId)));
+    if (allRangeOrderIds.length > 0) {
         try {
-            const orderGids = uniqueOrderIds.map((id) =>
+            const orderGids = allRangeOrderIds.map((id) =>
                 id.startsWith("gid://") ? id : `gid://shopify/Order/${id}`
             );
             for (let i = 0; i < orderGids.length; i += 50) {
@@ -394,8 +393,10 @@ export const loader = async ({ request }) => {
                 const orderRes = await admin.graphql(GET_ORDERS_QUERY, { variables: { ids: chunk } });
                 const orderData = await orderRes.json();
                 for (const order of (orderData?.data?.nodes || [])) {
-                    if (order?.currentTotalPriceSet) {
-                        totalSales += parseFloat(order.currentTotalPriceSet.presentmentMoney.amount || "0");
+                    if (order) {
+                        const oId = order.id.split("/").pop();
+                        const amt = parseFloat(order.currentTotalPriceSet?.presentmentMoney?.amount || "0");
+                        orderSpendingMap[oId] = amt;
                     }
                 }
             }
@@ -404,12 +405,15 @@ export const loader = async ({ request }) => {
         }
     }
 
+    for (const oId of uniqueOrderIds) {
+        totalSales += orderSpendingMap[oId] || 0;
+    }
+
     const aov = totalOrders > 0 ? Number((totalSales / totalOrders).toFixed(2)) : 0;
 
-    // ── Fetch store credit transactions
-    let appliedCredit = 0, debitRefunded = 0;
-    let totalCustomersRedeem = 0, totalDistributedLocations = 0;
-    const redeemCustomersSet = new Set();
+    // ── Fetch store credit transactions (specifically for debitRefunded / locations)
+    let debitRefunded = 0;
+    let totalDistributedLocations = 0;
     const locationsSet = new Set();
 
     try {
@@ -422,19 +426,24 @@ export const loader = async ({ request }) => {
             const type = node.transactionType;
             const owner = node.account?.owner;
 
-            if (type === "DEBIT") {
-                appliedCredit += amount;
-                if (owner?.__typename === "Customer") redeemCustomersSet.add(owner.id);
-            } else if (type === "EXPIRATION" || (type === "ADJUST" && amount < 0) || type === "REVERSION") {
+            if (type === "EXPIRATION" || (type === "ADJUST" && amount < 0) || type === "REVERSION") {
                 debitRefunded += Math.abs(amount);
             }
             if (owner?.__typename === "CompanyLocation") locationsSet.add(owner.id);
         }
-        totalCustomersRedeem = redeemCustomersSet.size;
         totalDistributedLocations = locationsSet.size;
     } catch (err) {
         console.error("Error fetching Shopify transactions:", err);
     }
+
+    // ── Fetch Applied Credit and Redeemed Customers from MongoDB events
+    const appliedCredit = filteredRangeEvents.reduce((acc, ev) => acc + (ev.redeemedAmount || 0), 0);
+    const redeemingCustomers = new Set(
+        filteredRangeEvents
+            .filter((ev) => (ev.redeemedAmount || 0) > 0)
+            .map((ev) => ev.customerId)
+    );
+    const totalCustomersRedeem = redeemingCustomers.size;
 
     const redemptionRate = issuedCredit > 0
         ? Number(((appliedCredit / issuedCredit) * 100).toFixed(2))
@@ -452,16 +461,38 @@ export const loader = async ({ request }) => {
 
     // ── Top Customers
     const customersMap = {};
-    for (const ev of completedEvents) {
+    for (const ev of filteredRangeEvents) {
         const custId = ev.customerId;
+        if (!custId) continue;
         const custName = ev.customerName || "Anonymous Customer";
-        if (!customersMap[custId]) customersMap[custId] = { name: custName, amount: 0 };
-        customersMap[custId].amount += ev.amount;
+        
+        if (!customersMap[custId]) {
+            customersMap[custId] = { 
+                name: custName, 
+                redeemedAmount: 0, 
+                totalSpending: 0,
+                orderIds: new Set()
+            };
+        }
+        
+        customersMap[custId].redeemedAmount += ev.redeemedAmount || 0;
+        
+        if (ev.orderId && !customersMap[custId].orderIds.has(ev.orderId)) {
+            if ((ev.redeemedAmount || 0) > 0) {
+                customersMap[custId].orderIds.add(ev.orderId);
+                customersMap[custId].totalSpending += orderSpendingMap[ev.orderId] || 0;
+            }
+        }
     }
     const topCustomers = Object.values(customersMap)
-        .map((c) => ({ name: c.name, amount: Number(c.amount.toFixed(2)) }))
-        .sort((a, b) => b.amount - a.amount)
-        .slice(0, 5);
+        .map((c) => ({
+            name: c.name,
+            redeemedAmount: Number(c.redeemedAmount.toFixed(2)),
+            totalSpending: Number(c.totalSpending.toFixed(2))
+        }))
+        .filter((c) => c.redeemedAmount > 0)
+        .sort((a, b) => b.redeemedAmount - a.redeemedAmount)
+        .slice(0, 3);
 
     // ── CHART 1: Rewards Issued Per Day (line)
     const rewardsPerDayMap = {};
@@ -1050,7 +1081,7 @@ export default function Analytics() {
 
                     {/* ── SECTION 3: Customers ── */}
                     <s-stack direction="block" gap="base">
-                        <s-heading variant="headingSm" className="text-gray-500">Customers</s-heading>
+                        <s-heading variant="headingSm" className="text-gray-500">Customer Insights</s-heading>
                         <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
                             <s-stack direction="block" gap="base">
                                 <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base" className="w-full">
@@ -1067,21 +1098,38 @@ export default function Analytics() {
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topCustomers.length === 0
                                             ? <s-box padding="base"><s-text color="subdued">No customers found.</s-text></s-box>
-                                            : <s-stack direction="block" gap="none">
-                                                {topCustomers.map((c, idx) => (
-                                                    <s-box key={idx}>
-                                                        {idx > 0 && <s-divider />}
-                                                        <s-box paddingBlock="base">
-                                                            <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                                            : <s-table>
+                                                <s-table-header-row>
+                                                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight py-2 px-3 text-left">
+                                                        Customer
+                                                    </s-table-header>
+                                                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight py-2 px-3 text-right">
+                                                        Redeemed credits
+                                                    </s-table-header>
+                                                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight py-2 px-3 text-right">
+                                                        Total spending
+                                                    </s-table-header>
+                                                </s-table-header-row>
+                                                <s-table-body>
+                                                    {topCustomers.map((c, idx) => (
+                                                        <s-table-row key={idx}>
+                                                            <s-table-cell className="py-3 px-3 text-left">
                                                                 <s-text color="subdued">{c.name}</s-text>
+                                                            </s-table-cell>
+                                                            <s-table-cell className="py-3 px-3 text-right">
                                                                 <s-text variant="bold">
-                                                                    {formatCurrency(c.amount, selectedCurrency)}
+                                                                    {formatCurrency(c.redeemedAmount, selectedCurrency)}
                                                                 </s-text>
-                                                            </s-stack>
-                                                        </s-box>
-                                                    </s-box>
-                                                ))}
-                                            </s-stack>
+                                                            </s-table-cell>
+                                                            <s-table-cell className="py-3 px-3 text-right">
+                                                                <s-text color="subdued">
+                                                                    {formatCurrency(c.totalSpending, selectedCurrency)}
+                                                                </s-text>
+                                                            </s-table-cell>
+                                                        </s-table-row>
+                                                    ))}
+                                                </s-table-body>
+                                            </s-table>
                                     }
                                 </s-stack>
                             </s-stack>
