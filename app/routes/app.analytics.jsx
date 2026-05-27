@@ -594,7 +594,7 @@ function MetricCell({ label, tooltip, value, loading, id }) {
     return (
         <s-stack direction="block" gap="base">
             <s-tooltip id={tooltipId}>{tooltip}</s-tooltip>
-            <s-text interestFor={tooltipId}>{label}</s-text>
+            <s-text interestFor={tooltipId}><span style={{ borderBottom: "1px dashed #919eab", cursor: "pointer", fontWeight: "bold" }}>{label}</span></s-text>
             {loading
                 ? <SkeletonLine width="80%" height={28} />
                 : <s-text style={{ fontSize: 20, fontWeight: 700, color: "#202223" }}>{value}</s-text>
@@ -1024,12 +1024,19 @@ export default function Analytics() {
                                         value={`${metrics.redemptionRate.toFixed(2)}%`} loading={isFetching} />
                                 </s-grid>
                                 <s-divider />
-                                <s-stack direction="block" gap="tight">
+                                <s-stack direction="block" gap="base">
                                     <s-heading variant="headingXs">Top programs with issued credits</s-heading>
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topPrograms.length === 0
                                             ? <s-box padding="base"><s-text color="subdued">No programs found.</s-text></s-box>
                                             : <s-stack direction="block" gap="none">
+                                                {/* Header Row */}
+                                                <s-box paddingBlock="none">
+                                                    <s-stack direction="inline" justifyContent="space-between" alignment="center">
+                                                        <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Program name</s-text>
+                                                        <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight" style={{ textAlign: "right" }}>Issued credit</s-text>
+                                                    </s-stack>
+                                                </s-box>
                                                 {topPrograms.map((p, idx) => (
                                                     <s-box key={p.name}>
                                                         {idx > 0 && <s-divider />}
@@ -1054,22 +1061,22 @@ export default function Analytics() {
                     <s-stack direction="block" gap="base">
                         <s-heading variant="headingSm" className="text-gray-500">Orders</s-heading>
 
-                        <s-section>
-                            <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base" className="w-full">
-                                <s-box padding="base" background="surface" borderWidth="base" borderRadius="base">
-                                    <MetricCell id="total-orders" label="Total orders with issued credit" tooltip={TOOLTIPS.totalOrders}
-                                        value={metrics.totalOrders} loading={isFetching} />
-                                </s-box>
-                                <s-box padding="base" background="surface" borderWidth="base" borderRadius="base">
-                                    <MetricCell id="total-sales" label="Total sales of orders with issued credit" tooltip={TOOLTIPS.totalSales}
-                                        value={formatCurrency(metrics.totalSales, selectedCurrency)} loading={isFetching} />
-                                </s-box>
-                                <s-box padding="base" background="surface" borderWidth="base" borderRadius="base">
-                                    <MetricCell id="aov" label="AOV with issued credit" tooltip={TOOLTIPS.aov}
-                                        value={formatCurrency(metrics.aov, selectedCurrency)} loading={isFetching} />
-                                </s-box>
-                            </s-grid>
-                        </s-section>
+                        {/* <s-section> */}
+                        <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base" className="w-full">
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <MetricCell id="total-orders" label="Total orders with issued credit" tooltip={TOOLTIPS.totalOrders}
+                                    value={metrics.totalOrders} loading={isFetching} />
+                            </s-section>
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <MetricCell id="total-sales" label="Total sales of orders with issued credit" tooltip={TOOLTIPS.totalSales}
+                                    value={formatCurrency(metrics.totalSales, selectedCurrency)} loading={isFetching} />
+                            </s-section>
+                            <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
+                                <MetricCell id="aov" label="AOV with issued credit" tooltip={TOOLTIPS.aov}
+                                    value={formatCurrency(metrics.aov, selectedCurrency)} loading={isFetching} />
+                            </s-section>
+                        </s-grid>
+                        {/* </s-section> */}
                     </s-stack>
 
                     {/* ── SECTION 3: Customers ── */}
@@ -1138,7 +1145,7 @@ export default function Analytics() {
                             <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
                                 <s-stack direction="block" gap="base">
                                     <s-stack direction="block" gap="none">
-                                        <s-heading variant="headingXs">Rewards Issued Per Day</s-heading>
+                                        <s-heading variant="headingXs">Rewards Issued Day</s-heading>
                                         <s-text color="subdued" variant="small">Currency: {selectedCurrency}</s-text>
                                     </s-stack>
                                     {isFetching
