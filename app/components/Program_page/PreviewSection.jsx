@@ -96,13 +96,6 @@ export function PreviewSection({
                 <img
                   src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
                   alt="Example T-Shirt"
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    objectFit: "cover",
-                    borderRadius: "6px",
-                    border: "1px solid #E4E8EC"
-                  }}
                 />
                 <s-stack direction="block" gap="none">
                   <s-text variant="bold">Example T-Shirt</s-text>
@@ -156,7 +149,7 @@ export function PreviewSection({
               )}
 
               {/* Checkout Button */}
-              <s-box paddingBlockStart="4" style={{ marginTop: "auto" }}>
+              <s-box paddingBlockStart="4">
                 <s-button variant="primary" block>
                   Checkout
                 </s-button>
@@ -166,17 +159,10 @@ export function PreviewSection({
 
           {/* PRODUCT PAGE PREVIEW */}
           {previewPage === "product" && (
-            <s-stack gap="base" style={{ width: "100%", flex: 1, display: "flex", flexDirection: "column", gap: "16px" }}>
+            <s-stack gap="base" >
               <img
                 src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
                 alt="Example T-Shirt"
-                style={{
-                  width: "100%",
-                  height: "176px",
-                  objectFit: "cover",
-                  borderRadius: "8px",
-                  border: "1px solid #E4E8EC"
-                }}
               />
 
               <s-stack direction="block" gap="none">
@@ -214,7 +200,7 @@ export function PreviewSection({
               )}
 
               {/* Add to cart Button */}
-              <s-box paddingBlockStart="4" style={{ marginTop: "auto" }}>
+              <s-box paddingBlockStart="4">
                 <s-button variant="primary" block>
                   Add to cart
                 </s-button>

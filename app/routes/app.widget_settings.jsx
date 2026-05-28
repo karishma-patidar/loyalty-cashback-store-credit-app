@@ -1,13 +1,34 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 
 export async function loader({ request }) {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+
+  let isNewCustomerAccounts = false;
+  try {
+    const query = `#graphql
+      query GetCustomerAccountsVersion {
+        shop {
+          customerAccountsV2 {
+            customerAccountsVersion
+          }
+        }
+      }
+    `;
+    const response = await admin.graphql(query);
+    const data = await response.json();
+    const version = data?.data?.shop?.customerAccountsV2?.customerAccountsVersion;
+    isNewCustomerAccounts = version === "NEW_CUSTOMER_ACCOUNTS";
+  } catch (err) {
+    console.error("Error querying customerAccountsVersion:", err);
+  }
+
   return {
     shop: session.shop,
+    isNewCustomerAccounts,
     extensionId:
       process.env.SHOPIFY_THEME_APP_EXTENSION_ID ||
       "65b30aae-2fc0-9b48-3e28-e6bf3e801b92f9c75ad7",
@@ -126,10 +147,69 @@ const WIDGETS = [
 ];
 
 export default function WidgetSettings() {
-  const { shop, extensionId } = useLoaderData();
+  const { shop, isNewCustomerAccounts, extensionId } = useLoaderData();
   const navigate = useNavigate();
   const shopify = useAppBridge();
   const [selectedTab, setSelectedTab] = useState(0);
+
+  const [themeAppExtensionExists, setThemeAppExtensionExists] = useState({
+    customForm: null,
+    cashbackOffer: null,
+    themeActivations: [],
+  });
+
+  useEffect(() => {
+    async function fetchExtensionStatuses(setThemeAppExtensionExists, isNewCustomerAccounts) {
+      try {
+        const extensions = await shopify.app.extensions();
+        const themeExt = extensions.find((e) => e.type === "theme_app_extension");
+        
+        // Support custom-from handle and local block handles (credit_block, loyalty_credit_app_embed)
+        const customForm = themeExt?.activations?.find(
+          (e) => e.handle === "custom-from" || e.handle === "credit_block" || e.handle === "loyalty_credit_app_embed"
+        );
+
+        // cashbackOffer (support cashback-offer and cashback_notification handles)
+        const cashbackOffer = isNewCustomerAccounts
+          ? themeExt?.activations?.find((e) => e.handle === "cashback-offer" || e.handle === "cashback_notification")
+          : null;
+
+        setThemeAppExtensionExists({
+          customForm: customForm?.status ?? null,
+          cashbackOffer: isNewCustomerAccounts ? (cashbackOffer?.status ?? null) : null,
+          themeActivations: themeExt?.activations || [],
+        });
+      } catch (err) {
+        console.error("[fetchExtensionStatuses]", err);
+      }
+    }
+
+    fetchExtensionStatuses(setThemeAppExtensionExists, isNewCustomerAccounts);
+  }, [isNewCustomerAccounts, shopify]);
+
+  const getWidgetStatus = (widget) => {
+    if (widget.id === "checkout-widget" || widget.id === "notification-banner") {
+      return themeAppExtensionExists.cashbackOffer;
+    }
+
+    // Find the theme activation for credit_block / loyalty_credit_app_embed / custom-from
+    const blockActivation = themeAppExtensionExists.themeActivations?.find(
+      (act) => act.handle === "custom-from" || act.handle === "credit_block" || act.handle === "loyalty_credit_app_embed"
+    );
+
+    if (!blockActivation) return null;
+    if (blockActivation.status !== "active") return null;
+
+    // Check nested activations array for specific template placement
+    const isPlacedOnTemplate = blockActivation.activations?.some((placement) => {
+      const targetStr = (placement.target || "").toLowerCase();
+      const queryStr = widget.templateTarget.toLowerCase().replace("/", "-");
+      const queryStrRaw = widget.templateTarget.toLowerCase();
+      return targetStr.includes(queryStr) || targetStr.includes(queryStrRaw);
+    });
+
+    return isPlacedOnTemplate ? "active" : null;
+  };
 
   const tabs = [
     { id: 0, label: "All (6)" },
@@ -171,12 +251,12 @@ export default function WidgetSettings() {
               justifyContent="space-between"
               alignment="center"
             >
-              <s-stack direction="inline" alignment="center">
+              <s-stack direction="inline" gap="small" alignItems="center">
                 <s-button
                   variant="tertiary"
-                  icon="chevron-left"
+                  icon="arrow-left"
                   onClick={() => navigate("/app/promotion_widgets")}
-                  className="mr-2"
+
                 />
                 <s-heading variant="headingLg" className="font-bold">
                   Widget settings
@@ -186,7 +266,6 @@ export default function WidgetSettings() {
               <s-stack
                 direction="inline"
                 gap="none"
-                className="bg-[#F4F6F8] p-1 rounded-lg border border-[#E4E8EC]"
               >
                 {tabs.map((tab) => (
                   <s-button
@@ -251,12 +330,19 @@ export default function WidgetSettings() {
                       </s-stack>
 
                       <s-stack>
-                        <s-button
-                          variant="primary"
-                          onClick={() => handleSetup(widget)}
-                        >
-                          Set up
-                        </s-button>
+                        {(() => {
+                          const status = getWidgetStatus(widget);
+                          const isActive = status === "active";
+                          return (
+                            <s-button
+                              variant={isActive ? "secondary" : "primary"}
+                              disabled={isActive ? "true" : undefined}
+                              onClick={() => handleSetup(widget)}
+                            >
+                              Setup
+                            </s-button>
+                          );
+                        })()}
                       </s-stack>
                     </s-stack>
                   </s-stack>

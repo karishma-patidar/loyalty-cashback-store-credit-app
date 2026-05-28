@@ -383,83 +383,101 @@ export default function Index() {
                 />
               </s-grid>
 
-              {!isGuideCollapsed && (
-                <s-stack gap="base">
-                  {/* Progress Bar & Status Text */}
-                  <s-stack direction="inline" gap="base" alignItems="center" >
-                    <s-text tone="subdued" style={{ fontSize: "13px", fontWeight: "500", color: "#6d7175" }}>
-                      {completedCount} / 3 completed
-                    </s-text>
-                    <div style={{ width: "120px", height: "8px", backgroundColor: "#e1e3e5", borderRadius: "4px", overflow: "hidden", display: "inline-block" }}>
-                      <div style={{ width: `${(completedCount / 3) * 100}%`, height: "100%", backgroundColor: "#146b2dff", borderRadius: "4px", transition: "width 0.3s ease" }} />
-                    </div>
-                  </s-stack>
+              <div style={{
+                display: "grid",
+                gridTemplateRows: !isGuideCollapsed ? "1fr" : "0fr",
+                transition: "grid-template-rows 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 250ms cubic-bezier(0.4, 0, 0.2, 1)",
+                opacity: !isGuideCollapsed ? 1 : 0,
+                overflow: "hidden"
+              }}>
+                <div style={{ minHeight: 0 }}>
+                  <s-stack gap="base" style={{ paddingTop: "12px" }}>
+                    {/* Progress Bar & Status Text */}
 
-                  {/* Steps list */}
-                  <s-box border="base" borderRadius="base" paddingInline="base">
-                    {steps.map((step, idx) => {
-                      const isExpanded = openStep === step.id;
-                      return (
-                        <s-box key={step.id} >
-                          {idx > 0 && <s-divider />}
-                          <s-box paddingBlockStart="small" paddingBlockEnd="small">
-                            <div
-                              onClick={(e) => {
-                                if (e.target.closest("button")) {
-                                  return;
-                                }
-                                setOpenStep(isExpanded ? null : step.id);
-                              }}
-                            >
-                              <s-grid gridTemplateColumns="auto 1fr auto" gap="base" alignItems="center">
-                                {/* Left: Status Circle */}
-                                {step.done ? (
-                                  <s-icon type="check-circle-filled" tone="success" />
-                                ) : (
-                                  <s-icon type="circle-dashed" />
-                                )}
+                    <s-stack direction="inline" gap="base" alignItems="center" >
+                      <s-box border="base" borderRadius="base" paddingInline="small">
+                        {completedCount} / 3 completed
+                      </s-box>
+                      <div style={{ width: "120px", height: "8px", backgroundColor: "#e1e3e5", borderRadius: "4px", overflow: "hidden", display: "inline-block" }}>
+                        <div style={{ width: `${(completedCount / 3) * 100}%`, height: "100%", backgroundColor: "#146b2dff", borderRadius: "4px", transition: "width 0.3s ease" }} />
+                      </div>
 
-                                {/* Middle: Step Title */}
-                                <s-text>
-                                  {step.title}
-                                </s-text>
+                    </s-stack>
 
-                                {/* Right: Accordion Arrow Button */}
-                                <s-button
-                                  accessibilityLabel={`Toggle step ${step.id} details`}
-                                  variant="tertiary"
-                                  icon={isExpanded ? "chevron-up" : "chevron-down"}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setOpenStep(isExpanded ? null : step.id);
-                                  }}
-                                />
-                              </s-grid>
-                            </div>
-                            {isExpanded && (
-                              <s-box paddingBlockStart="small" paddingBlockEnd="small" paddingInlineStart="base">
-                                <s-stack gap="base">
-                                  <s-paragraph color="subdued">
-                                    {step.content}
-                                  </s-paragraph>
-                                  <s-stack direction="inline" >
-                                    <s-button
-                                      variant="primary"
-                                      onClick={() => handleButtonClick(step)}
-                                    >
-                                      {step.buttonLabel}
-                                    </s-button>
-                                  </s-stack>
-                                </s-stack>
-                              </s-box>
-                            )}
+                    {/* Steps list */}
+                    <s-box border="base" borderRadius="base" paddingInline="base">
+                      {steps.map((step, idx) => {
+                        const isExpanded = openStep === step.id;
+                        return (
+                          <s-box key={step.id} >
+                            {idx > 0 && <s-divider />}
+                            <s-box paddingBlockStart="small" paddingBlockEnd="small">
+                              <div
+                                onClick={(e) => {
+                                  if (e.target.closest("button")) {
+                                    return;
+                                  }
+                                  setOpenStep(isExpanded ? null : step.id);
+                                }}
+                              >
+                                <s-grid gridTemplateColumns="auto 1fr auto" gap="base" alignItems="center">
+                                  {/* Left: Status Circle */}
+                                  {step.done ? (
+                                    <s-icon type="check-circle-filled" tone="success" />
+                                  ) : (
+                                    <s-icon type="circle-dashed" />
+                                  )}
+
+                                  {/* Middle: Step Title */}
+                                  <s-text>
+                                    {step.title}
+                                  </s-text>
+
+                                  {/* Right: Accordion Arrow Button */}
+                                  <s-button
+                                    accessibilityLabel={`Toggle step ${step.id} details`}
+                                    variant="tertiary"
+                                    icon={isExpanded ? "chevron-up" : "chevron-down"}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenStep(isExpanded ? null : step.id);
+                                    }}
+                                  />
+                                </s-grid>
+                              </div>
+                              <div style={{
+                                display: "grid",
+                                gridTemplateRows: isExpanded ? "1fr" : "0fr",
+                                transition: "grid-template-rows 250ms cubic-bezier(0.4, 0, 0.2, 1), opacity 250ms cubic-bezier(0.4, 0, 0.2, 1)",
+                                opacity: isExpanded ? 1 : 0,
+                                overflow: "hidden"
+                              }}>
+                                <div style={{ minHeight: 0 }}>
+                                  <s-box paddingBlockStart="small" paddingBlockEnd="small" paddingInlineStart="base">
+                                    <s-stack gap="base">
+                                      <s-paragraph color="subdued">
+                                        {step.content}
+                                      </s-paragraph>
+                                      <s-stack direction="inline" >
+                                        <s-button
+                                          variant="primary"
+                                          onClick={() => handleButtonClick(step)}
+                                        >
+                                          {step.buttonLabel}
+                                        </s-button>
+                                      </s-stack>
+                                    </s-stack>
+                                  </s-box>
+                                </div>
+                              </div>
+                            </s-box>
                           </s-box>
-                        </s-box>
-                      );
-                    })}
-                  </s-box>
-                </s-stack>
-              )}
+                        );
+                      })}
+                    </s-box>
+                  </s-stack>
+                </div>
+              </div>
             </s-stack>
           </s-section>
 
@@ -471,7 +489,7 @@ export default function Index() {
                 <s-heading variant="headingMd" style={{ fontWeight: "700", color: "#111827" }}>
                   Last 7 Days Performance
                 </s-heading>
-                <s-button variant="tertiary" onClick={() => navigate("/app/analytics")}>
+                <s-button onClick={() => navigate("/app/analytics")}>
                   View detail
                 </s-button>
               </s-grid>
