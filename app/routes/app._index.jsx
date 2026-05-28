@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher, useNavigate, useRouteError, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
@@ -6,6 +6,7 @@ import { authenticate } from "../shopify.server";
 import { syncMongoStoreSession } from "../db.mongodb.server";
 import { getStoreCreditMetrics } from "../services/storeCredit.server";
 import { MetricCell } from "../components/MetricCell";
+import { useExtensionStatuses } from "../hooks/useExtensionStatuses";
 
 // ─── GraphQL Queries ───────────────────────────────────────────────────────────
 
@@ -101,6 +102,9 @@ export const loader = async ({ request }) => {
         setup_guide_activated: metafield(namespace: "loyalty_cashback_app", key: "setup_guide_activated") {
           value
         }
+        customerAccountsV2 {
+          customerAccountsVersion
+        }
       }
     }
   `;
@@ -125,6 +129,7 @@ export const loader = async ({ request }) => {
 
   const widgetsAdded = shop?.widgets_added?.value === "true";
   const setupGuideActivated = shop?.setup_guide_activated?.value === "true";
+  const isNewCustomerAccounts = shop?.customerAccountsV2?.customerAccountsVersion === "NEW_CUSTOMER_ACCOUNTS";
 
   // Compute last 7 days date range (matching Analytics page default)
   const now = new Date();
@@ -152,6 +157,7 @@ export const loader = async ({ request }) => {
     hasPrograms,
     widgetsAdded,
     setupGuideActivated,
+    isNewCustomerAccounts,
     todayPerformance: {
       issuedCredit: metrics.issuedCredit,
       totalDistributedCustomers: metrics.totalDistributedCustomers,
@@ -250,7 +256,7 @@ export default function Index() {
     ? fetcher.formData.get("value") === "true"
     : loaderData?.setupGuideActivated || false;
 
-  const handleToggleActive = () => {
+   const handleToggleActive = () => {
     fetcher.submit(
       { actionType: "toggleActive", value: !isActive, shopId },
       { method: "POST", encType: "application/json" },
@@ -273,9 +279,27 @@ export default function Index() {
     }
   };
 
+  const isNewCustomerAccounts = loaderData?.isNewCustomerAccounts || false;
+  const themeAppExtensionExists = useExtensionStatuses(isNewCustomerAccounts);
+
+  // Check if there is any active widget block (excluding loyalty_credit_app_embed)
+  const isAnyWidgetActive = themeAppExtensionExists.themeActivations?.some(
+    (act) => act.handle !== "loyalty_credit_app_embed" && act.status === "active" && (!act.activations || act.activations.length > 0)
+  ) || false;
+
+  useEffect(() => {
+    if (!themeAppExtensionExists.loaded) return;
+
+    if (isAnyWidgetActive && !widgetsAdded) {
+      handleStepCheckboxToggle(3, true);
+    } else if (!isAnyWidgetActive && widgetsAdded) {
+      handleStepCheckboxToggle(3, false);
+    }
+  }, [themeAppExtensionExists.loaded, isAnyWidgetActive, widgetsAdded]);
+
   const step1Done = setupGuideActivated;
   const step2Done = hasPrograms;
-  const step3Done = widgetsAdded;
+  const step3Done = themeAppExtensionExists.loaded ? isAnyWidgetActive : widgetsAdded;
 
   const completedCount =
     (step1Done ? 1 : 0) +

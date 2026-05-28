@@ -3,6 +3,7 @@ import { useNavigate, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
+import { useExtensionStatuses } from "../hooks/useExtensionStatuses";
 
 export async function loader({ request }) {
   const { admin, session } = await authenticate.admin(request);
@@ -152,40 +153,7 @@ export default function WidgetSettings() {
   const shopify = useAppBridge();
   const [selectedTab, setSelectedTab] = useState(0);
 
-  const [themeAppExtensionExists, setThemeAppExtensionExists] = useState({
-    customForm: null,
-    cashbackOffer: null,
-    themeActivations: [],
-  });
-
-  useEffect(() => {
-    async function fetchExtensionStatuses(setThemeAppExtensionExists, isNewCustomerAccounts) {
-      try {
-        const extensions = await shopify.app.extensions();
-        const themeExt = extensions.find((e) => e.type === "theme_app_extension");
-        
-        // Support custom-from handle and local block handles (credit_block, loyalty_credit_app_embed)
-        const customForm = themeExt?.activations?.find(
-          (e) => e.handle === "custom-from" || e.handle === "credit_block" || e.handle === "loyalty_credit_app_embed"
-        );
-
-        // cashbackOffer (support cashback-offer and cashback_notification handles)
-        const cashbackOffer = isNewCustomerAccounts
-          ? themeExt?.activations?.find((e) => e.handle === "cashback-offer" || e.handle === "cashback_notification")
-          : null;
-
-        setThemeAppExtensionExists({
-          customForm: customForm?.status ?? null,
-          cashbackOffer: isNewCustomerAccounts ? (cashbackOffer?.status ?? null) : null,
-          themeActivations: themeExt?.activations || [],
-        });
-      } catch (err) {
-        console.error("[fetchExtensionStatuses]", err);
-      }
-    }
-
-    fetchExtensionStatuses(setThemeAppExtensionExists, isNewCustomerAccounts);
-  }, [isNewCustomerAccounts, shopify]);
+  const themeAppExtensionExists = useExtensionStatuses(isNewCustomerAccounts);
 
   const getWidgetStatus = (widget) => {
     if (widget.id === "checkout-widget" || widget.id === "notification-banner") {
