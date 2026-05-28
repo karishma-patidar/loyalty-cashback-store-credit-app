@@ -241,57 +241,50 @@ export default function Programs() {
   if (programs.length === 0) {
     return (
       <s-page>
-        <s-box className="max-w-[1100px] mx-auto px-4 py-16 flex justify-center">
-          <s-box className="shadow-sm border border-gray-200 p-10 flex flex-col items-center text-center max-w-[600px] w-full">
-            <s-heading
-              variant="headingLg"
-              className="font-bold text-[22px] mb-3 text-gray-800"
-            >
-              Create your first Cashback Program
-            </s-heading>
-
-            <s-paragraph
-              color="subdued"
-              className="text-[14px] leading-relaxed text-gray-500 mb-8 max-w-[480px]"
-            >
-              Encourage customers to buy more by rewarding them with store
-              credit on their orders or items. Schedule campaigns, set
-              expiration limits, and scale your brand loyalty effortlessly.
-            </s-paragraph>
-
-            <s-stack
-              direction="inline"
-              gap="base"
-              alignment="center"
-              className="justify-center"
-            >
-              <s-button
-                variant="secondary"
-                className="bg-white border border-gray-200 shadow-sm"
-              >
-                Settings
-              </s-button>
-              <s-button
-                variant="primary"
-                onClick={() => navigate("/app/programs_new")}
-                className="bg-black text-white shadow-sm"
-              >
-                Create program
-              </s-button>
-            </s-stack>
-          </s-box>
-        </s-box>
+        <s-section accessibilityLabel="Empty state with intents">
+          <s-grid gap="base" justifyItems="center" paddingBlock="large-400">
+            <s-box maxInlineSize="200px" maxBlockSize="200px">
+              <s-image
+                aspectRatio="1/0.5"
+                src="https://cdn.shopify.com/static/images/polaris/patterns/callout.png"
+                alt="Illustration showing product creation"
+              />
+            </s-box>
+            <s-grid justifyItems="center" maxInlineSize="450px" gap="base">
+              <s-stack alignItems="center" gap="base">
+                <s-heading>Create your first Cashback Program</s-heading>
+                <s-paragraph>
+                  Encourage customers to buy more by rewarding them with store credit on their orders or items. Schedule campaigns, set expiration limits, and scale your brand loyalty effortlessly.
+                </s-paragraph>
+              </s-stack>
+              <s-button-group>
+                <s-button
+                  slot="secondary-actions"
+                  onClick={() => navigate("/app")}
+                >
+                  Dashboard
+                </s-button>
+                <s-button
+                  slot="primary-action"
+                  onClick={() => navigate("/app/programs_new")}
+                >
+                  Create program
+                </s-button>
+              </s-button-group>
+            </s-grid>
+          </s-grid>
+        </s-section>
       </s-page>
     );
   }
 
   return (
-    <s-box className="min-h-screen">
-      <s-page>
+    <s-page>
+      <s-section>
         <s-stack gap="base">
           {/* Header Row */}
           <s-stack direction="inline" justifyContent="space-between">
-            <s-heading variant="headingLg" className="text-[28px] font-bold">
+            <s-heading variant="headingLg" >
               Programs
             </s-heading>
             <s-stack direction="inline" gap="base">
@@ -315,7 +308,7 @@ export default function Programs() {
           <s-box
             background="surface"
             borderWidth="base"
-            className="shadow-sm border-gray-200 overflow-hidden"
+            borderRadius="base"
           >
             {/* Tabs & Search Row */}
             <IndexFilters
@@ -362,25 +355,25 @@ export default function Programs() {
                 </p>
               </div>
             ) : (
-              <s-section padding="none">
+              <s-section >
                 <s-table>
-                  <s-table-header-row className="bg-gray-50/50">
-                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">
+                  <s-table-header-row >
+                    <s-table-header >
                       Program Name
                     </s-table-header>
-                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">
+                    <s-table-header >
                       Program ID
                     </s-table-header>
-                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight text-right">
+                    <s-table-header>
                       Issued amount
                     </s-table-header>
-                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight text-right">
+                    <s-table-header >
                       Remaining budget
                     </s-table-header>
-                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">
+                    <s-table-header >
                       Status
                     </s-table-header>
-                    <s-table-header className="text-[11px] font-bold text-gray-400 uppercase tracking-tight text-center">
+                    <s-table-header >
                       Action
                     </s-table-header>
                   </s-table-header-row>
@@ -389,12 +382,12 @@ export default function Programs() {
                     {filteredPrograms.map((prog) => (
                       <s-table-row
                         key={prog.id}
-                        className="hover:bg-gray-50/20 transition-colors"
+
                       >
                         <s-table-cell className="py-4">
                           <s-text
                             variant="bold"
-                            className="text-[13px] text-gray-800"
+
                           >
                             {prog.name}
                           </s-text>
@@ -430,7 +423,14 @@ export default function Programs() {
                             alignment="center"
                             className="justify-center"
                           >
+                            <s-tooltip id={`status-tooltip-${prog.id}`}>
+                              {prog.status === "Active" ? "Deactivate" : "Activate"}
+                            </s-tooltip>
+                            <s-tooltip id={`edit-tooltip-${prog.id}`}>Edit</s-tooltip>
+                            <s-tooltip id={`delete-tooltip-${prog.id}`}>Delete</s-tooltip>
+
                             <s-button
+                              interestFor={`status-tooltip-${prog.id}`}
                               variant="tertiary"
                               icon={
                                 prog.status === "Active"
@@ -441,6 +441,7 @@ export default function Programs() {
                               className="p-1"
                             />
                             <s-button
+                              interestFor={`edit-tooltip-${prog.id}`}
                               variant="tertiary"
                               icon="edit"
                               onClick={() => {
@@ -450,6 +451,7 @@ export default function Programs() {
                               className="p-1"
                             />
                             <s-button
+                              interestFor={`delete-tooltip-${prog.id}`}
                               variant="tertiary"
                               icon="delete"
                               onClick={() => deleteProgram(prog.id)}
@@ -464,28 +466,10 @@ export default function Programs() {
               </s-section>
             )}
 
-            {/* Footer Pagination */}
-            <s-box
-              padding="3"
-              className="flex justify-center items-center border-t border-gray-100 bg-gray-50/20 gap-2"
-            >
-              <s-button
-                variant="secondary"
-                icon="chevron-left"
-                disabled
-                className="min-w-0"
-              />
-              <s-button
-                variant="secondary"
-                icon="chevron-right"
-                disabled
-                className="min-w-0"
-              />
-            </s-box>
           </s-box>
         </s-stack>
-      </s-page>
-    </s-box>
+      </s-section>
+    </s-page>
   );
 }
 

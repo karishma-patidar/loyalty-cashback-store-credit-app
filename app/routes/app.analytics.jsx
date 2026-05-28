@@ -1001,7 +1001,7 @@ export default function Analytics() {
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topPrograms.length === 0
                                             ? <s-box padding="base"><s-text color="subdued">No programs found.</s-text></s-box>
-                                            : <s-stack direction="block" gap="none">
+                                            : <s-stack direction="block" >
                                                 {/* Header Row */}
                                                 <s-box paddingBlock="none">
                                                     <s-stack direction="inline" justifyContent="space-between" alignment="center">
@@ -1012,7 +1012,7 @@ export default function Analytics() {
                                                 {topPrograms.map((p, idx) => (
                                                     <s-box key={p.name}>
                                                         {idx > 0 && <s-divider />}
-                                                        <s-box paddingBlock="base">
+                                                        <s-box paddingBlock="small">
                                                             <s-stack direction="inline" justifyContent="space-between" alignment="center">
                                                                 <s-text color="subdued">{p.name}</s-text>
                                                                 <s-text variant="bold">
