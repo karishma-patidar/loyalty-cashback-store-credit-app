@@ -18,8 +18,9 @@ import {
 import { authenticate } from "../shopify.server";
 import connectMongoDB, { getShopModel, migrateShopData } from "../db.mongodb.server";
 import { getStoreCreditTransactions } from "../services/storeCredit.server";
+import { MetricCell, SkeletonLine } from "../components/MetricCell";
 
-export const getenabledPresentmentCurrencies = async () => {
+const getenabledPresentmentCurrencies = async () => {
     try {
         const response = await fetch("shopify:admin/api/2026-04/graphql.json", {
             method: "POST",
@@ -563,19 +564,6 @@ export const loader = async ({ request }) => {
 
 // ─── Skeleton Helpers ────────────────────────────────────────────────────────
 
-function SkeletonLine({ width = "100%", height = 14, style = {} }) {
-    return (
-        <div style={{
-            width, height,
-            borderRadius: 6,
-            background: "linear-gradient(90deg, #f1f2f4 25%, #e8e9eb 50%, #f1f2f4 75%)",
-            backgroundSize: "200% 100%",
-            animation: "shimmer 1.4s infinite",
-            ...style,
-        }} />
-    );
-}
-
 function SkeletonLines({ lines = 4, height = 12 }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -584,22 +572,6 @@ function SkeletonLines({ lines = 4, height = 12 }) {
                 <SkeletonLine key={i} width={i === lines - 1 ? "70%" : "100%"} height={height} />
             ))}
         </div>
-    );
-}
-
-// ─── MetricCell ──────────────────────────────────────────────────────────────
-
-function MetricCell({ label, tooltip, value, loading, id }) {
-    const tooltipId = `tooltip-${id}`;
-    return (
-        <s-stack direction="block" gap="base">
-            <s-tooltip id={tooltipId}>{tooltip}</s-tooltip>
-            <s-text interestFor={tooltipId}><span style={{ borderBottom: "1px dashed #919eab", cursor: "pointer", fontWeight: "bold" }}>{label}</span></s-text>
-            {loading
-                ? <SkeletonLine width="80%" height={28} />
-                : <s-text style={{ fontSize: 20, fontWeight: 700, color: "#202223" }}>{value}</s-text>
-            }
-        </s-stack>
     );
 }
 
@@ -1098,28 +1070,28 @@ export default function Analytics() {
                                             ? <s-box padding="base"><s-text color="subdued">No customers found.</s-text></s-box>
                                             : <s-stack direction="block" gap="none">
                                                 {/* Header Row */}
-                                                <s-grid gridTemplateColumns="2.5fr 1fr 1fr" gap="tight" className="w-full">
-                                                    <s-box paddingBlock="tight">
+                                                <s-grid gridTemplateColumns="2.5fr 1fr 1fr" gap="base" className="w-full">
+                                                    <s-box paddingBlock="base">
                                                         <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Customer</s-text>
                                                     </s-box>
-                                                    <s-box paddingBlock="tight" style={{ textAlign: "right" }}>
+                                                    <s-box paddingBlock="base" style={{ textAlign: "right" }}>
                                                         <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Redeemed credits</s-text>
                                                     </s-box>
-                                                    <s-box paddingBlock="tight" style={{ textAlign: "right" }}>
+                                                    <s-box paddingBlock="base" style={{ textAlign: "right" }}>
                                                         <s-text className="text-[11px] font-bold text-gray-400 uppercase tracking-tight">Total spending</s-text>
                                                     </s-box>
                                                 </s-grid>
                                                 {topCustomers.map((c) => (
-                                                    <s-grid key={c.name} gridTemplateColumns="2.5fr 1fr 1fr" gap="base" className="w-full">
-                                                        <s-box paddingBlock="base">
+                                                    <s-grid key={c.name} gridTemplateColumns="2.5fr 1fr 1fr" gap="tight" className="w-full">
+                                                        <s-box paddingBlock="small">
                                                             <s-text color="subdued">{c.name}</s-text>
                                                         </s-box>
-                                                        <s-box paddingBlock="base" style={{ textAlign: "right" }}>
+                                                        <s-box paddingBlock="small" style={{ textAlign: "right" }}>
                                                             <s-text variant="bold">
                                                                 {formatCurrency(c.redeemedAmount, selectedCurrency)}
                                                             </s-text>
                                                         </s-box>
-                                                        <s-box paddingBlock="base" style={{ textAlign: "right" }}>
+                                                        <s-box paddingBlock="small" style={{ textAlign: "right" }}>
                                                             <s-text color="subdued">
                                                                 {formatCurrency(c.totalSpending, selectedCurrency)}
                                                             </s-text>

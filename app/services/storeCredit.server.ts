@@ -5,6 +5,7 @@
 
 import { getShopPrograms as getShopProgramsRaw } from "./graphql.server";
 import { authenticate } from "../shopify.server";
+import connectMongoDB, { getShopModel } from "../db.mongodb.server";
 
 export type AdminClient = NonNullable<Awaited<ReturnType<typeof authenticate.webhook>>["admin"]>;
 
@@ -46,6 +47,9 @@ export interface ShopifyOrderPayload {
     last_name?: string;
     email?: string;
   };
+  payment_gateway_names?: string[];
+  total_discounts?: string;
+  presentment_currency?: string;
 }
 
 /**
@@ -80,7 +84,9 @@ export async function addStoreCredit(
   exchangeRate?: number
 ) {
   try {
-    // 1. Find the store credit account ID for the customer
+    // 1. Check if customer already has a store credit account (for currency mismatch handling only).
+    //    In 2026-01, storeCreditAccountCredit accepts a Customer GID as `id` and auto-creates
+    //    the account if one doesn't exist yet — no separate creation step is needed.
     const getAccountQuery = `#graphql
       query getCustomerStoreCreditAccount($id: ID!) {
         customer(id: $id) {
@@ -102,69 +108,31 @@ export async function addStoreCredit(
     const accountRes = await admin.graphql(getAccountQuery, { variables: { id: customerId } });
     const accountData = await accountRes.json();
     console.log("GraphQL Response [getCustomerStoreCreditAccount]:", JSON.stringify(accountData, null, 2));
-    let storeCreditAccountId = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
+    const existingAccountId = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.id;
     const accountCurrency = accountData?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node?.balance?.currencyCode;
 
     let finalAmount = amount;
     let finalCurrencyCode = currencyCode;
 
-    if (storeCreditAccountId && accountCurrency && accountCurrency !== currencyCode) {
+    if (existingAccountId && accountCurrency && accountCurrency !== currencyCode) {
       console.log(`[Currency Mismatch] Customer's store credit account is in ${accountCurrency}, but transaction is in ${currencyCode}.`);
       if (exchangeRate && exchangeRate > 0) {
         finalAmount = Number((amount * exchangeRate).toFixed(2));
-        console.log(`[Currency Conversion] Converted amount from ${amount} ${currencyCode} to ${finalAmount} ${accountCurrency} using exchangeRate ${exchangeRate}`);
+        console.log(`[Currency Conversion] Converted ${amount} ${currencyCode} → ${finalAmount} ${accountCurrency} using rate ${exchangeRate}`);
       } else {
-        console.warn(`[Currency Conversion] No exchange rate provided. Falling back to account currency ${accountCurrency} with original amount.`);
+        console.warn(`[Currency Conversion] No exchange rate provided. Using account currency ${accountCurrency} with original amount.`);
       }
       finalCurrencyCode = accountCurrency;
     }
 
-    // 2. If no account exists, create one
-    if (!storeCreditAccountId) {
-      console.log(`[~] No store credit account found for ${customerId}. Creating one...`);
-      const createAccountMutation = `#graphql
-        mutation storeCreditAccountCreate($storeCreditAccount: StoreCreditAccountCreateInput!) {
-          storeCreditAccountCreate(storeCreditAccount: $storeCreditAccount) {
-            storeCreditAccount {
-              id
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-      `;
-      const createVars = {
-        storeCreditAccount: {
-          ownerId: customerId,
-          currency: currencyCode
-        }
-      };
-      console.log("GraphQL Request [storeCreditAccountCreate] variables:", createVars);
-      const createRes = await admin.graphql(createAccountMutation, {
-        variables: createVars
-      });
-      const createData = await createRes.json();
-      console.log("GraphQL Response [storeCreditAccountCreate]:", JSON.stringify(createData, null, 2));
-      storeCreditAccountId = createData?.data?.storeCreditAccountCreate?.storeCreditAccount?.id;
-
-      if (!storeCreditAccountId) {
-        console.error("❌ Failed to create store credit account:", createData?.data?.storeCreditAccountCreate?.userErrors);
-        return { userErrors: createData?.data?.storeCreditAccountCreate?.userErrors || [{ message: "Failed to create store credit account" }] };
-      }
-    }
-
-    // 3. Issue credit
-    const query = `#graphql
-      mutation storeCreditAccountCredit(
-        $id: ID!
-        $creditInput: StoreCreditAccountCreditInput!
-      ) {
-        storeCreditAccountCredit(
-          id: $id
-          creditInput: $creditInput
-        ) {
+    // 2. Issue credit.
+    //    The `id` argument accepts either a StoreCreditAccount GID OR a Customer GID.
+    //    When a Customer GID is passed, Shopify auto-creates the account if it doesn't exist.
+    //    Reference: https://shopify.dev/docs/api/admin-graphql/2026-01/mutations/storecreditaccountcredit
+    //    NOTE: The `notify` argument is NOT supported in this API version — omit it.
+    const creditMutation = `#graphql
+      mutation storeCreditAccountCredit($id: ID!, $creditInput: StoreCreditAccountCreditInput!) {
+        storeCreditAccountCredit(id: $id, creditInput: $creditInput) {
           storeCreditAccountTransaction {
             id
             amount {
@@ -187,72 +155,29 @@ export async function addStoreCredit(
       }
     `;
 
-    let result;
-    let emailUnsupported = false;
+    // Use the existing account ID if available, otherwise pass the customer ID directly.
+    // Both are valid owner IDs for this mutation.
+    const ownerId = existingAccountId || customerId;
 
     const creditVars = {
-      id: storeCreditAccountId,
+      id: ownerId,
       creditInput: {
         creditAmount: {
           amount: String(finalAmount),
           currencyCode: finalCurrencyCode,
         },
-        notify: notifyCustomer,
         ...(expiresAt ? { expiresAt } : {}),
+        // notify is a field of StoreCreditAccountCreditInput (not a top-level arg).
+        // Set to true to trigger the Shopify "store credit issued" email.
+        notify: notifyCustomer === true,
       },
     };
     console.log("GraphQL Request [storeCreditAccountCredit] variables:", creditVars);
 
-    try {
-      const response = await admin.graphql(query, {
-        variables: creditVars,
-      });
-
-      const data = await response.json();
-      console.log("GraphQL Response [storeCreditAccountCredit]:", JSON.stringify(data, null, 2));
-      result = data?.data?.storeCreditAccountCredit;
-    } catch (graphqlError: any) {
-      const errMsg = String(graphqlError.message || graphqlError);
-      if (
-        errMsg.includes("notify") &&
-        (errMsg.includes("Field is not defined") || errMsg.includes("invalid value") || errMsg.includes("GraphqlQueryError"))
-      ) {
-        console.warn("[⚠️] Shopify API version does not support 'notify' field. Retrying credit addition without notify...");
-        emailUnsupported = true;
-
-        const retryVars = {
-          id: storeCreditAccountId,
-          creditInput: {
-            creditAmount: {
-              amount: String(finalAmount),
-              currencyCode: finalCurrencyCode,
-            },
-            ...(expiresAt ? { expiresAt } : {}),
-          },
-        };
-        console.log("GraphQL Retry Request [storeCreditAccountCredit] variables:", retryVars);
-
-        try {
-          const responseRetry = await admin.graphql(query, {
-            variables: retryVars,
-          });
-
-          const dataRetry = await responseRetry.json();
-          console.log("GraphQL Retry Response [storeCreditAccountCredit]:", JSON.stringify(dataRetry, null, 2));
-          result = dataRetry?.data?.storeCreditAccountCredit;
-        } catch (retryError) {
-          console.error("❌ Retry Store Credit Error:", retryError);
-          throw retryError;
-        }
-      } else {
-        console.error("❌ Store Credit GraphQL Error:", graphqlError);
-        throw graphqlError;
-      }
-    }
-
-    if (result) {
-      result.emailUnsupported = emailUnsupported;
-    }
+    const response = await admin.graphql(creditMutation, { variables: creditVars });
+    const data = await response.json();
+    console.log("GraphQL Response [storeCreditAccountCredit]:", JSON.stringify(data, null, 2));
+    const result = data?.data?.storeCreditAccountCredit;
 
     if (result?.userErrors && result.userErrors.length > 0) {
       console.log("❌ GraphQL User Errors:", result.userErrors);
@@ -421,4 +346,70 @@ export async function getStoreCreditTransactions(admin: AdminClient): Promise<an
   const data = await response.json();
   return data?.data?.storeCreditAccountTransactions?.edges?.map((edge: any) => edge.node) || [];
 }
+
+/**
+ * Calculate store credit metrics (issued credit, distributed customers, redeemed credit)
+ * for a given date range and currency.
+ */
+export async function getStoreCreditMetrics(
+  admin: AdminClient,
+  shop: string,
+  start: Date,
+  end: Date,
+  currencyCode: string
+) {
+  // Connect to MongoDB
+  await connectMongoDB();
+
+  let issuedCredit = 0;
+  const uniqueCustomersSet = new Set<string>();
+  const redeemingCustomersSet = new Set<string>();
+  let redeemedCredit = 0;
+
+  try {
+    const ShopModel = getShopModel(shop);
+    if (ShopModel) {
+      const docs = await ShopModel.find({});
+      for (const doc of docs) {
+        if (doc.events && Array.isArray(doc.events)) {
+          for (const ev of doc.events) {
+            if (!ev.orderId) continue;
+            const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(doc.createdAt);
+            if (eventDate >= start && eventDate <= end) {
+              const evCurrency = ev.currency || currencyCode;
+              if (evCurrency === currencyCode) {
+                // Redemption sum from MongoDB events redeemedAmount
+                const redeemedAmt = Number(ev.redeemedAmount || 0);
+                redeemedCredit += redeemedAmt;
+                if (redeemedAmt > 0 && ev.customerId) {
+                  redeemingCustomersSet.add(ev.customerId);
+                }
+
+                if (ev.status === "Completed") {
+                  const amountVal = Number(ev.issuedAmount || ev.amount || 0);
+                  issuedCredit += amountVal;
+                  if (ev.customerId) {
+                    uniqueCustomersSet.add(ev.customerId);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error loading MongoDB events in getStoreCreditMetrics:", err);
+  }
+
+  const totalDistributedCustomers = uniqueCustomersSet.size;
+
+  return {
+    issuedCredit: Number(issuedCredit.toFixed(2)),
+    totalDistributedCustomers,
+    redeemedCredit: Number(redeemedCredit.toFixed(2)),
+    totalCustomersRedeem: redeemingCustomersSet.size,
+  };
+}
+
 

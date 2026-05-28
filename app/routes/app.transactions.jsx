@@ -20,7 +20,6 @@ import {
   Badge,
   useSetIndexFiltersMode,
   IndexFiltersMode,
-  SkeletonDisplayText,
 } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import connectMongoDB, {
@@ -672,42 +671,6 @@ export default function Transactions() {
 
   const isLoading = navigation.state === "loading" || isRefreshing;
 
-  const skeletonRows = Array.from({ length: paginatedTransactions.length > 0 ? paginatedTransactions.length : 5 }).map(
-    (_, index) => (
-      <IndexTable.Row
-        id={`skeleton-row-${index}`}
-        key={`skeleton-row-${index}`}
-        position={index}
-      >
-        <IndexTable.Cell>
-          <div style={{ padding: "4px 0" }}>
-            <SkeletonDisplayText size="small" />
-          </div>
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-        <IndexTable.Cell>
-          <SkeletonDisplayText size="small" />
-        </IndexTable.Cell>
-      </IndexTable.Row>
-    ),
-  );
 
   const dateRangeChoices = [
     { label: "All", value: "all" },
@@ -793,10 +756,10 @@ export default function Transactions() {
   // Polaris IndexFilters requires sort values in "field direction" format
   // (split by space internally to determine which arrow to highlight)
   const sortOptions = [
-    { label: "Creation date", value: "date desc", directionLabel: "Newest to oldest" },
     { label: "Creation date", value: "date asc", directionLabel: "Oldest to newest" },
-    { label: "Store credit amount", value: "amount desc", directionLabel: "Highest to lowest" },
+    { label: "Creation date", value: "date desc", directionLabel: "Newest to oldest" },
     { label: "Store credit amount", value: "amount asc", directionLabel: "Lowest to highest" },
+    { label: "Store credit amount", value: "amount desc", directionLabel: "Highest to lowest" },
   ];
 
   const handleSortChange = useCallback((value) => {
