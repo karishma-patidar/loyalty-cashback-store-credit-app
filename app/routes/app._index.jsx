@@ -64,6 +64,9 @@ export const loader = async ({ request }) => {
           description:
             "Stores loyalty program configurations for Loyalty Store Credit app",
           ownerType: "SHOP",
+          access: {
+            storefront: "PUBLIC_READ"
+          }
         },
       },
     });
@@ -78,6 +81,57 @@ export const loader = async ({ request }) => {
           description:
             "Stores active/inactive toggle status for Loyalty Store Credit app",
           ownerType: "SHOP",
+          access: {
+            storefront: "PUBLIC_READ"
+          }
+        },
+      },
+    });
+
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty App URL",
+          namespace: "loyalty_cashback_app",
+          key: "app_url",
+          type: "single_line_text_field",
+          description: "Stores the app backend URL",
+          ownerType: "SHOP",
+          access: {
+            storefront: "PUBLIC_READ"
+          }
+        },
+      },
+    });
+
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty Widget Pending Msg",
+          namespace: "loyalty_cashback_app",
+          key: "widget_pending_msg",
+          type: "single_line_text_field",
+          description: "Pending message for customer cashback",
+          ownerType: "SHOP",
+          access: {
+            storefront: "PUBLIC_READ"
+          }
+        },
+      },
+    });
+
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty Widget Completed Msg",
+          namespace: "loyalty_cashback_app",
+          key: "widget_completed_msg",
+          type: "single_line_text_field",
+          description: "Completed message for customer cashback",
+          ownerType: "SHOP",
+          access: {
+            storefront: "PUBLIC_READ"
+          }
         },
       },
     });
@@ -114,6 +168,39 @@ export const loader = async ({ request }) => {
   const shop = data?.data?.shop;
 
   const shopId = shop?.id;
+
+  // Sync app_url metafield value on the shop to keep it updated with current tunnel/host
+  const appUrl = process.env.SHOPIFY_APP_URL;
+  if (appUrl && shopId) {
+    try {
+      const setMetafieldMutation = `#graphql
+        mutation SetMetafield($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) {
+            userErrors {
+              message
+            }
+          }
+        }
+      `;
+      await admin.graphql(setMetafieldMutation, {
+        variables: {
+          metafields: [
+            {
+              ownerId: shopId,
+              namespace: "loyalty_cashback_app",
+              key: "app_url",
+              type: "single_line_text_field",
+              value: appUrl,
+            },
+          ],
+        },
+      });
+      console.log("✅ Sync app_url metafield value on shop successfully:", appUrl);
+    } catch (err) {
+      console.error("❌ Failed to set app_url metafield value on shop:", err);
+    }
+  }
+
   const shopSubdomain = session.shop.split(".")[0];
   const isActive = shop?.app_active?.value !== "false";
 
@@ -256,7 +343,7 @@ export default function Index() {
     ? fetcher.formData.get("value") === "true"
     : loaderData?.setupGuideActivated || false;
 
-   const handleToggleActive = () => {
+  const handleToggleActive = () => {
     fetcher.submit(
       { actionType: "toggleActive", value: !isActive, shopId },
       { method: "POST", encType: "application/json" },
@@ -330,7 +417,7 @@ export default function Index() {
       title: "Display promotion widgets",
       content: "Display the promotion widgets to boost visibility and engagement of store credit programs.",
       buttonLabel: "Set up widgets",
-      buttonHref: "/app/widget_settings",
+      buttonHref: "/app/settings",
       isExternal: false,
       done: step3Done,
     },

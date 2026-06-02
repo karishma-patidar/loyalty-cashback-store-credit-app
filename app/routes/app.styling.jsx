@@ -377,7 +377,7 @@ export default function StylingPage() {
           if (isDirty) {
             handleDiscard();
           }
-          navigate("/app/promotion_widgets");
+          navigate("/app/settings");
         },
       }}
     >

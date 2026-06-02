@@ -290,7 +290,7 @@ export default function Programs() {
             <s-stack direction="inline" gap="base">
               <s-button
                 variant="secondary"
-                onClick={() => navigate("/app/promotion_widgets")}
+                onClick={() => navigate("/app/settings")}
               >
                 Settings
               </s-button>

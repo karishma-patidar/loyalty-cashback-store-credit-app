@@ -9,6 +9,54 @@ import {
 } from './storeCredit.server';
 import { connectMongoDB, getCustomerModel } from '../db.mongodb.server';
 
+declare const process: any;
+
+async function saveOrderMetafields(adminClient: AdminClient, orderId: string, amount: number, currency: string) {
+  try {
+    const orderGid = orderId.startsWith("gid://") ? orderId : `gid://shopify/Order/${orderId}`;
+    const mutation = `#graphql
+      mutation SetOrderMetafields($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      metafields: [
+        {
+          ownerId: orderGid,
+          namespace: "loyalty_cashback_app",
+          key: "issued_amount",
+          type: "number_decimal",
+          value: String(amount),
+        },
+        {
+          ownerId: orderGid,
+          namespace: "loyalty_cashback_app",
+          key: "currency",
+          type: "single_line_text_field",
+          value: String(currency),
+        }
+      ]
+    };
+
+    const response = await adminClient.graphql(mutation, { variables });
+    const data = await response.json();
+    const errors = data?.data?.metafieldsSet?.userErrors;
+    if (errors && errors.length > 0) {
+      console.error(`❌ Failed to set metafields on Order ${orderId}:`, errors);
+    } else {
+      console.log(`✅ Successfully set loyalty metafields on Order ${orderId}: ${amount} ${currency}`);
+    }
+  } catch (err) {
+    console.error(`❌ Error setting metafields on Order ${orderId}:`, err);
+  }
+}
+
 /**
  * Helper to calculate the store credit amount applied/redeemed on an order.
  * Filters out duplicate transaction kinds (e.g. AUTHORIZATION vs CAPTURE) to prevent double counting.
@@ -198,6 +246,8 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
     } catch (err) {
       console.error("❌ Error fetching order transactions for redeemedAmount on ORDERS_CREATE:", err);
     }
+    const currencyCode = orderPayload.presentment_currency || orderPayload.currency || 'USD';
+    await saveOrderMetafields(adminClient, orderId, cashbackAmount, currencyCode);
 
     console.log(`[+] Saving order ${orderName} as PENDING...`);
     const newEvent = {
@@ -355,6 +405,7 @@ export async function processOrderWebhook(shop: string, admin: AdminClient | und
     if (cashbackAmount <= 0) return;
 
     const currencyCode = mappedOrder.currency || 'USD';
+    await saveOrderMetafields(adminClient, orderId, cashbackAmount, currencyCode);
     const expiresAt = calculateExpirationDate(program);
 
     // Email Send Conditions:
