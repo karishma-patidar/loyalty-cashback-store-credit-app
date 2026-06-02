@@ -1,7 +1,7 @@
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLoaderData, useSubmit, useNavigation, useNavigate } from "react-router";
-// DatePicker replaced by s-date-picker web component
+import DateFilter from "../components/analytics_search_filter";
 import {
     ResponsiveContainer,
     LineChart,
@@ -135,27 +135,6 @@ function calculateDateRange(preset, startDateStr, endDateStr) {
     return { start, end };
 }
 
-function isSameDay(d1, d2) {
-    if (!d1 || !d2) return false;
-    return (
-        d1.getFullYear() === d2.getFullYear() &&
-        d1.getMonth() === d2.getMonth() &&
-        d1.getDate() === d2.getDate()
-    );
-}
-
-function findMatchingPreset(start, end) {
-    if (!start || !end) return "custom";
-    const presets = ["today", "yesterday", "7days", "30days", "lastweek", "lastmonth", "weektodate", "monthtodate"];
-    for (const p of presets) {
-        const range = calculateDateRange(p);
-        if (isSameDay(range.start, start) && isSameDay(range.end, end)) {
-            return p;
-        }
-    }
-    return "custom";
-}
-
 function formatYYYYMMDD(date) {
     if (!date) return "";
     const d = new Date(date);
@@ -163,14 +142,6 @@ function formatYYYYMMDD(date) {
     const mm = String(d.getMonth() + 1).padStart(2, "0");
     const dd = String(d.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
-}
-
-function parseLocalYYYYMMDD(str) {
-    const parts = str.split("-");
-    if (parts.length === 3) {
-        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    }
-    return new Date(str);
 }
 
 function formatDateLabel(dateObj) {
@@ -192,15 +163,7 @@ const currencySymbols = {
     JPY: "¥",
 };
 
-const currencyDetails = {
-    INR: { label: "INR – ₹ Indian Rupee", symbol: "₹" },
-    USD: { label: "USD – $ US Dollar", symbol: "$" },
-    GBP: { label: "GBP – £ British Pound", symbol: "£" },
-    EUR: { label: "EUR – € Euro", symbol: "€" },
-    AUD: { label: "AUD – A$ Australian Dollar", symbol: "A$" },
-    CAD: { label: "CAD – C$ Canadian Dollar", symbol: "C$" },
-    JPY: { label: "JPY – ¥ Japanese Yen", symbol: "¥" },
-};
+
 
 function formatCurrency(amount, currencyCode) {
     const symbol = currencySymbols[currencyCode] || currencyCode || "$";
@@ -245,34 +208,6 @@ const TOOLTIPS = {
     totalDistributedCustomers: "Number of customers who received cashback credits.",
 };
 
-// ─── Icons ───────────────────────────────────────────────────────────────────
-
-const CalendarIcon = () => (
-    <svg viewBox="0 0 20 20" fill="currentColor"
-        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}>
-        <path fillRule="evenodd"
-            d="M6.5 2a.75.75 0 0 1 .75.75V4h5.5V2.75a.75.75 0 0 1 1.5 0V4h1.25A2.5 2.5 0 0 1 18 6.5v9A2.5 2.5 0 0 1 15.5 18h-11A2.5 2.5 0 0 1 2 15.5v-9A2.5 2.5 0 0 1 4.5 4H5.75V2.75A.75.75 0 0 1 6.5 2Zm10 7.5h-13v6a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-6ZM5.75 5.5v.75a.75.75 0 0 1-1.5 0V5.5H4.5A1 1 0 0 0 3.5 6.5V8h13V6.5a1 1 0 0 0-1-1h-.25v.75a.75.75 0 0 1-1.5 0V5.5H5.75Z"
-            clipRule="evenodd" />
-    </svg>
-);
-
-const ArrowLeftIcon = () => (
-    <svg viewBox="0 0 20 20" fill="currentColor"
-        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}>
-        <path fillRule="evenodd"
-            d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z"
-            clipRule="evenodd" />
-    </svg>
-);
-
-const RefreshIcon = () => (
-    <svg viewBox="0 0 20 20" fill="currentColor"
-        style={{ width: 16, height: 16, display: "inline-block", verticalAlign: "middle" }}>
-        <path fillRule="evenodd"
-            d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.313H7.75a.75.75 0 0 0 0-1.5H3.75a.75.75 0 0 0-.75.75v4a.75.75 0 0 0 1.5 0v-2.125l.674.673a7 7 0 0 0 12.01-4.22.75.75 0 0 0-1.872-.154ZM4.688 8.576a5.5 5.5 0 0 1 9.201-2.466l.312.313H12.25a.75.75 0 0 0 0 1.5h4a.75.75 0 0 0 .75-.75v-4a.75.75 0 0 0-1.5 0v2.125l-.674-.673a7 7 0 0 0-12.01 4.22.75.75 0 1 0 1.872.154Z"
-            clipRule="evenodd" />
-    </svg>
-);
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 
@@ -636,56 +571,25 @@ export default function Analytics() {
     const navigation = useNavigation();
     const isFetching = navigation.state === "loading";
 
-    // ── Date filter state
-    const popoverRef = useRef(null);
-    const sDatePickerRef = useRef(null);
-
-    // Wire up s-date-picker change events via DOM
-    useEffect(() => {
-        const el = sDatePickerRef.current;
-        if (!el) return;
-        const handleChange = (e) => {
-            const val = e.target?.value || e.detail?.value || "";
-            if (val && val.includes("--")) {
-                const [startStr, endStr] = val.split("--");
-                const start = parseLocalYYYYMMDD(startStr);
-                const end = parseLocalYYYYMMDD(endStr);
-                if (start.toString() !== "Invalid Date" && end.toString() !== "Invalid Date") {
-                    const newRange = { start, end };
-                    setTempSelectedDates(newRange);
-                    setTempPreset(findMatchingPreset(start, end));
-                    setCalendarMonth({ month: start.getMonth(), year: start.getFullYear() });
-                }
-            }
-        };
-        const handleViewChange = (e) => {
-            const view = e.target?.view || e.detail?.view || "";
-            if (view && view.includes("-")) {
-                const [y, m] = view.split("-");
-                setCalendarMonth({ month: parseInt(m, 10) - 1, year: parseInt(y, 10) });
-            }
-        };
-        el.addEventListener("change", handleChange);
-        el.addEventListener("viewchange", handleViewChange);
-        return () => {
-            el.removeEventListener("change", handleChange);
-            el.removeEventListener("viewchange", handleViewChange);
-        };
-    }, []);
-    const [tempPreset, setTempPreset] = useState(preset);
+    // ── Date filter state (derived from loader URL params)
     const initialRange = calculateDateRange(preset, startDateStr, endDateStr);
-    const [tempSelectedDates, setTempSelectedDates] = useState({
-        start: initialRange.start,
-        end: initialRange.end,
-    });
-    const [{ month, year }, setCalendarMonth] = useState({
-        month: tempSelectedDates.start.getMonth(),
-        year: tempSelectedDates.start.getFullYear(),
-    });
+    const [dateFrom, setDateFrom] = useState(formatYYYYMMDD(initialRange.start));
+    const [dateTo, setDateTo] = useState(formatYYYYMMDD(initialRange.end));
 
     // ── Currency and Language state
     const [tempCurrency, setTempCurrency] = useState(selectedCurrency);
     const [tempLanguage, setTempLanguage] = useState(selectedLanguage);
+
+    // Sync date filter state when loader data changes (after navigation)
+    useEffect(() => {
+        if (!isFetching) {
+            const r = calculateDateRange(preset, startDateStr, endDateStr);
+            setDateFrom(formatYYYYMMDD(r.start));
+            setDateTo(formatYYYYMMDD(r.end));
+            setTempCurrency(selectedCurrency);
+            setTempLanguage(selectedLanguage);
+        }
+    }, [preset, startDateStr, endDateStr, selectedCurrency, selectedLanguage, isFetching]);
 
     const mongoCurrenciesKey = mongoCurrencies?.join(",") || "";
     useEffect(() => {
@@ -719,128 +623,71 @@ export default function Analytics() {
         fetchCurrencies();
     }, [mongoCurrenciesKey, shopCurrency, submit]);
 
-    useEffect(() => {
-        if (!isFetching) {
-            setTempPreset(preset);
-            setTempCurrency(selectedCurrency);
-            setTempLanguage(selectedLanguage);
-            const r = calculateDateRange(preset, startDateStr, endDateStr);
-            setTempSelectedDates({ start: r.start, end: r.end });
-        }
-    }, [preset, startDateStr, endDateStr, selectedCurrency, selectedLanguage, isFetching]);
-
     // ── Handlers
-    const handlePresetChange = (value) => {
-        setTempPreset(value);
-        if (value !== "custom") {
-            const c = calculateDateRange(value, "", "");
-            setTempSelectedDates({ start: c.start, end: c.end });
-            setCalendarMonth({ month: c.start.getMonth(), year: c.start.getFullYear() });
-        }
-    };
-
-    const handleDatePickerChange = (range) => {
-        setTempSelectedDates(range);
-        const matched = findMatchingPreset(range.start, range.end);
-        setTempPreset(matched);
-    };
-
-    const handleMonthChange = (m, y) => setCalendarMonth({ month: m, year: y });
-
     const buildParams = (overrides = {}) => {
         const p = new URLSearchParams();
-        p.set("preset", overrides.preset ?? preset);
-        p.set("currency", overrides.currency ?? selectedCurrency);
-        p.set("language", overrides.language ?? selectedLanguage);
-        if ((overrides.preset ?? preset) === "custom") {
-            p.set("startDate", overrides.startDate ?? startDateStr);
-            p.set("endDate", overrides.endDate ?? endDateStr);
+        p.set("preset", overrides.preset ?? "custom");
+        p.set("currency", overrides.currency ?? tempCurrency);
+        p.set("language", overrides.language ?? tempLanguage);
+        if (overrides.startDate || overrides.endDate) {
+            p.set("startDate", overrides.startDate ?? dateFrom);
+            p.set("endDate", overrides.endDate ?? dateTo);
         }
         return p;
     };
 
-    const handleApply = () => {
+    // Called when DateFilter applies a date range
+    const handleDateChange = ({ from, to }) => {
+        setDateFrom(from);
+        setDateTo(to);
         const p = new URLSearchParams();
-        p.set("preset", tempPreset);
+        p.set("preset", "custom");
         p.set("currency", tempCurrency);
         p.set("language", tempLanguage);
-        if (tempPreset === "custom") {
-            p.set("startDate", formatYYYYMMDD(tempSelectedDates.start));
-            p.set("endDate", formatYYYYMMDD(tempSelectedDates.end));
-        }
+        p.set("startDate", from);
+        p.set("endDate", to);
         submit(p, { method: "get", replace: true });
     };
 
-    const handleCancel = () => {
-        setTempPreset(preset);
-        setTempCurrency(selectedCurrency);
-        setTempLanguage(selectedLanguage);
-        const r = calculateDateRange(preset, startDateStr, endDateStr);
-        setTempSelectedDates({ start: r.start, end: r.end });
-    };
-
     const handleRefresh = () => {
-        const p = buildParams();
+        const p = buildParams({ startDate: dateFrom, endDate: dateTo });
         p.set("_refresh", String(Date.now()));
         submit(p, { method: "get", replace: true });
     };
 
     const handleCurrencyChange = (value) => {
         setTempCurrency(value);
-        const p = buildParams({ currency: value });
+        const p = buildParams({ currency: value, startDate: dateFrom, endDate: dateTo });
         submit(p, { method: "get", replace: true });
     };
 
     const handleLanguageChange = (value) => {
         setTempLanguage(value);
-        const p = buildParams({ language: value });
+        const p = buildParams({ language: value, startDate: dateFrom, endDate: dateTo });
         submit(p, { method: "get", replace: true });
     };
 
-
-    const formatInputDate = (date) => {
-        if (!date) return "";
-        const d = new Date(date);
-        const day = String(d.getDate()).padStart(2, "0");
-        const mon = String(d.getMonth() + 1).padStart(2, "0");
-        return `${day}-${mon}-${d.getFullYear()}`;
+    // Generate readable date display text for the filter button
+    const getButtonText = () => {
+        if (!dateFrom && !dateTo) return "All Time";
+        if (dateFrom && dateTo) {
+            if (dateFrom === dateTo) return `Date: ${dateFrom}`;
+            return `Date: ${dateFrom} to ${dateTo}`;
+        }
+        if (dateFrom) return `Date: From ${dateFrom}`;
+        return `Date: Until ${dateTo}`;
     };
 
-    const getButtonLabel = () => {
-        if (preset === "today") return "Today";
-        if (preset === "yesterday") return "Yesterday";
-        if (preset === "7days") return "Last 7 days";
-        if (preset === "30days") return "Last 30 days";
-        if (preset === "lastweek") return "Last week";
-        if (preset === "lastmonth") return "Last month";
-        if (preset === "weektodate") return "Week to date";
-        if (preset === "monthtodate") return "Month to date";
-        return `${formatInputDate(initialRange.start)} – ${formatInputDate(initialRange.end)}`;
+    // Close the date filter popover programmatically
+    const closeDatePopover = () => {
+        const popover = document.getElementById("date-actions");
+        if (popover) {
+            if (typeof popover.hidePopover === "function") {
+                try { popover.hidePopover(); } catch (_) { /* ignore */ }
+            }
+            popover.removeAttribute("open");
+        }
     };
-
-    const getPresetOptions = () => {
-        return [
-            { label: "Today", value: "today" },
-            { label: "Yesterday", value: "yesterday" },
-            { label: "Last 7 days", value: "7days" },
-            { label: "Last 30 days", value: "30days" },
-            { label: "Last week", value: "lastweek" },
-            { label: "Last month", value: "lastmonth" },
-            { label: "Week to date", value: "weektodate" },
-            { label: "Month to date", value: "monthtodate" },
-            { label: "Custom", value: "custom" },
-        ];
-    };
-
-    const datePickerActivator = (
-        <s-button
-            commandFor="date-picker-popover"
-            icon="calendar"
-        >
-            {getButtonLabel()}
-        </s-button>
-    );
-
 
     return (
         <s-box className="min-h-screen">
@@ -871,9 +718,7 @@ export default function Analytics() {
                                 >
                                     Refresh Data
                                 </s-button>
-
                             </s-box>
-
 
                             {currencyOptions.length > 1 && (
                                 <s-box>
@@ -893,90 +738,27 @@ export default function Analytics() {
                                 </s-box>
                             )}
 
-                            <s-box className="date-picker-wrapper" style={{ position: "relative", display: "inline-block" }}>
-                                {datePickerActivator}
-                                <s-popover id="date-picker-popover">
-                                    <s-box
-                                        ref={popoverRef}
-                                        background="surface"
-                                        borderWidth="base"
-                                        borderRadius="base"
-                                        padding="base"
-                                    >
-                                        <s-stack direction="block" gap="base">
-                                            <s-heading variant="headingSm">Date range</s-heading>
+                            <s-stack direction="inline" gap="small" alignment="center">
+                                <s-button
+                                    icon="calendar"
+                                    variant="secondary"
+                                    accessibilityLabel="Select Date Range"
+                                    commandFor="date-actions"
+                                >
+                                    {getButtonText()}
+                                </s-button>
 
-                                            <s-stack direction="block" gap="tight">
-                                                <s-select
-                                                    value={tempPreset}
-                                                    onInput={(e) => handlePresetChange(e.target.value)}
-                                                >
-                                                    {getPresetOptions().map((o) => (
-                                                        <s-option
-                                                            key={o.value}
-                                                            value={o.value}
-                                                            disabled={o.value === "custom" && tempPreset !== "custom" ? "true" : undefined}
-                                                        >
-                                                            {o.label}
-                                                        </s-option>
-                                                    ))}
-                                                </s-select>
-                                            </s-stack>
-
-                                            <s-stack direction="inline" gap="base">
-                                                <s-box >
-                                                    <s-stack direction="inline" gap="tight">
-                                                        <s-text color="subdued" variant="small">Starting</s-text>
-                                                        <s-text-field
-                                                            type="date"
-                                                            value={formatYYYYMMDD(tempSelectedDates.start)}
-                                                            onInput={(e) => {
-                                                                const d = parseLocalYYYYMMDD(e.target.value);
-                                                                if (d.toString() !== "Invalid Date") {
-                                                                    const newRange = { ...tempSelectedDates, start: d };
-                                                                    setTempSelectedDates(newRange);
-                                                                    const matched = findMatchingPreset(newRange.start, newRange.end);
-                                                                    setTempPreset(matched);
-                                                                }
-                                                            }}
-                                                        />
-                                                    </s-stack>
-                                                </s-box>
-                                                <s-box>
-                                                    <s-stack direction="inline" gap="tight">
-                                                        <s-text color="subdued" variant="small">Ending</s-text>
-                                                        <s-text-field
-                                                            type="date"
-                                                            value={formatYYYYMMDD(tempSelectedDates.end)}
-                                                            onInput={(e) => {
-                                                                const d = parseLocalYYYYMMDD(e.target.value);
-                                                                if (d.toString() !== "Invalid Date") {
-                                                                    const newRange = { ...tempSelectedDates, end: d };
-                                                                    setTempSelectedDates(newRange);
-                                                                    const matched = findMatchingPreset(newRange.start, newRange.end);
-                                                                    setTempPreset(matched);
-                                                                }
-                                                            }}
-                                                        />
-                                                    </s-stack>
-                                                </s-box>
-                                            </s-stack>
-
-                                            <s-date-picker
-                                                ref={sDatePickerRef}
-                                                type="range"
-                                                view={`${year}-${String(month + 1).padStart(2, "0")}`}
-                                                value={`${formatYYYYMMDD(tempSelectedDates.start)}--${formatYYYYMMDD(tempSelectedDates.end)}`}
-                                            />
-
-                                            <s-stack direction="inline" gap="base" alignment="end" className="justify-end w-full">
-                                                <s-button commandFor="date-picker-popover" command="--hide" onClick={handleCancel}>Cancel</s-button>
-                                                <s-button variant="primary" commandFor="date-picker-popover" command="--hide" onClick={handleApply}>Apply</s-button>
-                                            </s-stack>
-                                        </s-stack>
+                                <s-popover id="date-actions">
+                                    <s-box padding="base">
+                                        <DateFilter
+                                            dateFrom={dateFrom}
+                                            dateTo={dateTo}
+                                            onDateChange={handleDateChange}
+                                            onClose={closeDatePopover}
+                                        />
                                     </s-box>
                                 </s-popover>
-                            </s-box>
+                            </s-stack>
                         </s-stack>
                     </s-stack>
 
