@@ -10,12 +10,15 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopPrograms, setShopPrograms } from "../services/graphql.server";
-import { PreviewSection } from "../components/Program_page/PreviewSection.jsx";
-import { ProgramScheduling } from "../components/Program_page/ProgramScheduling.jsx";
-import { PromotionSettings } from "../components/Program_page/PromotionSettings.jsx";
-import { AdvancedSettings } from "../components/Program_page/AdvancedSettings.jsx";
-import { ProgramSettingsCard } from "../components/Program_page/ProgramSettingsCard.jsx";
-import { ChannelEligibilitySettings } from "../components/Program_page/ChannelEligibilitySettings.jsx";
+import { PreviewSection } from "../components/styling/PreviewSection.jsx";
+import { ProgramScheduling } from "../components/program/ProgramScheduling.jsx";
+import { PromotionSettings } from "../components/program/PromotionSettings.jsx";
+import { AdvancedSettings } from "../components/program/AdvancedSettings.jsx";
+import { ProgramSettingsCard } from "../components/program/ProgramSettingsCard.jsx";
+import { ProgramNameCard } from "../components/program/ProgramNameCard.jsx";
+import { ProgramTypeCard } from "../components/program/ProgramTypeCard.jsx";
+import { CartDrawerVisibilityCard } from "../components/program/CartDrawerVisibilityCard.jsx";
+import { ChannelEligibilitySettings } from "../components/program/ChannelEligibilitySettings.jsx";
 import { Page } from "@shopify/polaris";
 
 export const loader = async ({ request }) => {
@@ -548,25 +551,14 @@ export default function NewProgram() {
             {/* Settings Form Stack */}
             <s-stack direction="block" gap="base">
               {/* Program Name */}
-              <s-section>
-                <s-stack gap="base">
-                  <s-box padding="4">
-                    <s-heading variant="headingSm">Program name</s-heading>
-                  </s-box>
-                  <s-box padding="5" paddingBlockStart="0">
-                    <s-text-field
-                      type="text"
-                      value={name}
-                      onInput={(e) => setName(e.target.value)}
-                      placeholder="e.g. Cashback on every purchase"
-                    />
-                  </s-box>
-                </s-stack>
-              </s-section>
+              <ProgramNameCard name={name} setName={setName} />
 
+              {/* Program Type */}
+              <ProgramTypeCard programType={programType} setProgramType={setProgramType} />
+
+              {/* Program Settings */}
               <ProgramSettingsCard
                 programType={programType}
-                setProgramType={setProgramType}
                 amountType={amountType}
                 setAmountType={setAmountType}
                 amount={amount}
@@ -615,6 +607,9 @@ export default function NewProgram() {
                 setMsgProduct={setMsgProduct}
                 msgCart={msgCart}
                 setMsgCart={setMsgCart}
+              />
+
+              <CartDrawerVisibilityCard
                 showCartDrawerPoints={showCartDrawerPoints}
                 setShowCartDrawerPoints={setShowCartDrawerPoints}
               />
