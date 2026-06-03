@@ -61,6 +61,33 @@ const shopSchema = new mongoose.Schema({
   events: [eventSchema]
 }, { timestamps: true });
 
+const appSettingsSchema = new mongoose.Schema({
+  shop: { type: String, required: true, unique: true },
+  onboardingCompleted: { type: Boolean, default: false }
+}, { timestamps: true });
+
+export const AppSettingsModel = mongoose.models.AppSettings || mongoose.model("AppSettings", appSettingsSchema);
+
+export async function getAppSettings(shop) {
+  if (!shop) return null;
+  await connectMongoDB();
+  let settings = await AppSettingsModel.findOne({ shop });
+  if (!settings) {
+    settings = await AppSettingsModel.create({ shop, onboardingCompleted: false });
+  }
+  return settings;
+}
+
+export async function updateAppSettings(shop, updates) {
+  if (!shop) return null;
+  await connectMongoDB();
+  return await AppSettingsModel.findOneAndUpdate(
+    { shop },
+    { $set: updates },
+    { new: true, upsert: true }
+  );
+}
+
 // Dynamic model retrieval/compilation per shop (collection name corresponds to the shop's domain)
 export function getShopModel(shop) {
   if (!shop) return null;

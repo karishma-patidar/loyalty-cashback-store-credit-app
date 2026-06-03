@@ -123,18 +123,18 @@ export default function WidgetsTab({ loaderData }) {
     return true;
   });
 
-  const shopSubdomain = shop ? shop.split(".")[0] : "";
 
   const handleSetup = (widget) => {
+    const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
     if (widget.id === "notification-banner") {
-      const editorUrl = `https://admin.shopify.com/store/${shopSubdomain}/settings/checkout/editor/profiles/3122331696?exitPath=%2Fadmin%2Fthemes%2F141941571632%2Feditor&page=order-status&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/cashback_notification`;
-      window.open(editorUrl, "_blank");
+      const editorUrl = `https://${cleanShop}/admin/settings/checkout/editor/profiles/3122331696?exitPath=%2Fadmin%2Fthemes%2F141941571632%2Feditor&page=order-status&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/cashback_notification`;
+      window.open(editorUrl, "_blank", "noopener,noreferrer");
       shopify.toast.show("Opening Checkout Customization Editor...");
       return;
     }
 
-    const editorUrl = `https://admin.shopify.com/store/${shopSubdomain}/themes/current/editor?template=${widget.templateTarget}&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/${widget.blockHandle}&target=mainSection`;
-    window.open(editorUrl, "_blank");
+    const editorUrl = `https://${cleanShop}/admin/themes/current/editor?template=${widget.templateTarget}&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/${widget.blockHandle}&target=mainSection`;
+    window.open(editorUrl, "_blank", "noopener,noreferrer");
     shopify.toast.show(`Opening Shopify Theme Editor for ${widget.placement}...`);
   };
 

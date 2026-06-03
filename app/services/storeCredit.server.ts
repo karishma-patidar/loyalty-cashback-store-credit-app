@@ -40,6 +40,7 @@ export interface ShopifyOrderPayload {
     quantity?: number | string;
   }>;
   current_total_price?: string;
+  total_price?: string;
   currency?: string;
   customer?: {
     id?: number | string;
@@ -231,7 +232,7 @@ export function calculateCashbackAmount(program: ProgramSettings, orderPayload: 
     }
   } else {
     console.log("[~] Calculating order-based cashback...");
-    const orderTotal = parseFloat(orderPayload.current_total_price || "0");
+    const orderTotal = parseFloat(orderPayload.current_total_price || orderPayload.total_price || "0");
 
     if (
       program.amountType === "Percentage" ||

@@ -11,41 +11,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { Page } from "@shopify/polaris";
 import { StylingForm } from "../components/styling/StylingForm.jsx";
 import { PreviewSection } from "../components/styling/PreviewSection.jsx";
+import { getShopStyling, setShopStyling } from "../services/graphql.server";
 
 export async function loader({ request }) {
   const { admin } = await authenticate.admin(request);
-
-  const query = `#graphql
-    query GetStylingMetafields {
-      shop {
-        id
-        bg_color: metafield(namespace: "loyalty_cashback_app", key: "widget_bg_color") {
-          value
-        }
-        text_color: metafield(namespace: "loyalty_cashback_app", key: "widget_text_color") {
-          value
-        }
-        credit_icon: metafield(namespace: "loyalty_cashback_app", key: "widget_credit_icon") {
-          value
-        }
-        hide_watermark: metafield(namespace: "loyalty_cashback_app", key: "hide_watermark") {
-          value
-        }
-      }
-    }
-  `;
-
-  const response = await admin.graphql(query);
-  const data = await response.json();
-  const shop = data?.data?.shop;
-
-  return {
-    shopId: shop?.id,
-    bgColor: shop?.bg_color?.value || "#cfb84a",
-    textColor: shop?.text_color?.value || "#000000",
-    creditIcon: shop?.credit_icon?.value || "icon2",
-    hideWatermark: shop?.hide_watermark?.value === "true",
-  };
+  return getShopStyling(admin);
 }
 
 export async function action({ request }) {
@@ -53,59 +23,12 @@ export async function action({ request }) {
   const payload = await request.json();
   const { shopId, bgColor, textColor, creditIcon, hideWatermark } = payload;
 
-  const mutation = `#graphql
-    mutation SetStylingMetafields($metafields: [MetafieldsSetInput!]!) {
-      metafieldsSet(metafields: $metafields) {
-        userErrors {
-          message
-        }
-      }
-    }
-  `;
-
-  const response = await admin.graphql(mutation, {
-    variables: {
-      metafields: [
-        {
-          ownerId: shopId,
-          namespace: "loyalty_cashback_app",
-          key: "widget_bg_color",
-          type: "single_line_text_field",
-          value: bgColor,
-        },
-        {
-          ownerId: shopId,
-          namespace: "loyalty_cashback_app",
-          key: "widget_text_color",
-          type: "single_line_text_field",
-          value: textColor,
-        },
-        {
-          ownerId: shopId,
-          namespace: "loyalty_cashback_app",
-          key: "widget_credit_icon",
-          type: "single_line_text_field",
-          value: creditIcon,
-        },
-        {
-          ownerId: shopId,
-          namespace: "loyalty_cashback_app",
-          key: "hide_watermark",
-          type: "single_line_text_field",
-          value: String(hideWatermark),
-        },
-      ],
-    },
-  });
-
-  const data = await response.json();
-  const userErrors = data?.data?.metafieldsSet?.userErrors;
-
-  if (userErrors && userErrors.length > 0) {
-    return { success: false, errors: userErrors };
+  try {
+    await setShopStyling(admin, shopId, { bgColor, textColor, creditIcon, hideWatermark });
+    return { success: true };
+  } catch (error) {
+    return { success: false, errors: [{ message: error.message }] };
   }
-
-  return { success: true };
 }
 
 export default function StylingPage() {

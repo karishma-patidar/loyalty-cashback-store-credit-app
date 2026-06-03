@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import { useRef, useEffect } from "react";
 
 const ICONS = {
   icon1: (color = "#F59E0B") => (
@@ -79,7 +79,7 @@ export function StylingForm({
         <s-box padding="4">
           <s-checkbox
             label="Hide watermark"
-            checked={hideWatermark}
+            checked={hideWatermark ? true : undefined}
             onInput={(e) => setHideWatermark(e.target.checked)}
           />
         </s-box>

@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useFetcher } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { ProgramForm } from "./ProgramForm";
 import { PreviewSection } from "./styling/PreviewSection.jsx";
 import { StylingForm } from "./styling/StylingForm.jsx";
@@ -428,38 +430,292 @@ function StepThree(props) {
   );
 }
 
-function StepFour() {
-  return (
-    <div style={{ padding: "16px 0", textAlign: "center", boxSizing: "border-box", width: "100%" }}>
-      {/* Centered Header & Title */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "32px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-          {/* Connection Icon */}
+function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // Reusable embed status check
+  const checkEmbedStatus = async (tid) => {
+    try {
+      const res = await fetch("/api/get-embeded?theme_id=" + tid);
+      const content = await res.json();
+      
+      if (content?.data?.error) {
+        setErrorMsg(content.data.error);
+        setIsVerifying(false);
+        return false;
+      }
+
+      const embedDisabled = content?.data?.embed_status_disabled;
+
+      if (!embedDisabled) {
+        setIsVerified(true);
+        setIsVerifying(false);
+        setErrorMsg("");
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error("Error checking theme status:", err);
+      // Log error but do not stop verification on transient network errors
+      return false;
+    }
+  };
+
+  // Poll in background when verifying
+  useEffect(() => {
+    let intervalId;
+    let timeoutId;
+    if (isVerifying && !isVerified) {
+      // Start background polling check
+      intervalId = setInterval(() => {
+        checkEmbedStatus(themeId);
+      }, 2500);
+
+      // Add a 3-minute timeout for verification
+      timeoutId = setTimeout(() => {
+        setIsVerifying(false);
+        setErrorMsg("Verification timed out. Please ensure you have enabled the extension in the Theme Customizer and clicked Save.");
+      }, 180000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isVerifying, isVerified, themeId]);
+
+  // Auto-check on load (background check)
+  useEffect(() => {
+    if (themeId && !isVerified) {
+      checkEmbedStatus(themeId);
+    }
+  }, [themeId]);
+
+  const handleEnableClick = async () => {
+    setIsVerifying(true);
+    setErrorMsg("");
+    window.open(themeEditorUrl, "_blank", "noopener,noreferrer");
+
+    try {
+      const res = await fetch("/api/enable-theme-extension", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ themeId }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        // Log the error but do not stop verifying/polling
+        console.warn("Failed to automatically enable theme extension, continuing with manual verification polling:", data.error);
+      }
+    } catch (err) {
+      // Log the error but do not stop verifying/polling
+      console.warn("Error calling enable-theme-extension API, continuing with manual verification polling:", err);
+    }
+  };
+
+
+
+  if (isVerified) {
+    return (
+      <div style={{ padding: "16px 0", boxSizing: "border-box", width: "100%", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}>
+        {/* Centered Header & Title */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "32px", textAlign: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+            <span style={{ fontSize: "28px", color: "#f59e0b" }}>⚡</span>
+            <h2 style={{ fontSize: "28px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
+              Theme Extension Enabled
+            </h2>
+          </div>
+          <p style={{ fontSize: "16px", color: "#4b5563", margin: "4px 0 0 0", fontWeight: "400" }}>
+            Great news! Loyalty Cashback is now active on your theme.
+          </p>
+        </div>
+
+        {/* Green Success Alert Box */}
+        <div
+          style={{
+            maxWidth: "750px",
+            margin: "0 auto",
+            backgroundColor: "#e6f4ea",
+            border: "1px solid #cbf2d6",
+            borderRadius: "8px",
+            padding: "20px 24px",
+            display: "flex",
+            alignItems: "center",
+            gap: "16px",
+            textAlign: "left",
+          }}
+        >
+          {/* Checkmark Circle */}
           <div
             style={{
-              width: "32px",
-              height: "32px",
+              width: "36px",
+              height: "36px",
               borderRadius: "50%",
-              backgroundColor: "#7c3aed",
+              backgroundColor: "#10b981",
               color: "#ffffff",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               fontWeight: "bold",
-              fontSize: "16px",
-              border: "2px solid #a78bfa",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
+              fontSize: "18px",
+              flexShrink: 0,
             }}
           >
-            🔌
+            ✓
           </div>
-          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
-            Connect your storefront theme
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            <strong style={{ fontSize: "16px", color: "#0f5132", fontWeight: "700" }}>
+              Setup Successful
+            </strong>
+            <span style={{ fontSize: "14px", color: "#0f5132", fontWeight: "500" }}>
+              App embed successfully detected! You're ready to proceed to the final step.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding: "16px 0", boxSizing: "border-box", width: "100%", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}>
+
+      {/* Centered Header & Title */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "24px", textAlign: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+          <span style={{ fontSize: "28px", color: "#f59e0b" }}>⚡</span>
+          <h2 style={{ fontSize: "28px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
+            One Last Step - Activate Loyalty Cashback
           </h2>
         </div>
-        <p style={{ fontSize: "14px", color: "#4b5563", maxWidth: "550px", margin: "8px auto 0 auto", lineHeight: "1.6" }}>
-          Enable the theme app extension in your theme editor to show the widget.
+        <p style={{ fontSize: "16px", color: "#4b5563", margin: "4px 0 0 0", fontWeight: "400" }}>
+          This is required for Loyalty Cashback to appear on your store.
         </p>
+      </div>
+
+      {/* Error Alert Box if failed */}
+      {errorMsg && (
+        <div
+          style={{
+            maxWidth: "750px",
+            margin: "0 auto 24px auto",
+            backgroundColor: "#fef2f2",
+            border: "1px solid #fee2e2",
+            borderRadius: "8px",
+            padding: "16px 20px",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "12px",
+            textAlign: "left",
+          }}
+        >
+          <span style={{ fontSize: "20px", color: "#dc2626", marginTop: "2px", flexShrink: 0 }}>❌</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            <strong style={{ fontSize: "15px", color: "#991b1b", fontWeight: "700" }}>
+              Enablement Failed
+            </strong>
+            <span style={{ fontSize: "14px", color: "#b91c1c", fontWeight: "500" }}>
+              {errorMsg}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Important Yellow Alert Box */}
+      <div
+        style={{
+          maxWidth: "750px",
+          margin: "0 auto 24px auto",
+          backgroundColor: "#fffbeb",
+          border: "1px solid #fde68a",
+          borderRadius: "8px",
+          padding: "16px 20px",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: "12px",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ fontSize: "20px", color: "#d97706", marginTop: "2px", flexShrink: 0 }}>⚠️</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <strong style={{ fontSize: "15px", color: "#92400e", fontWeight: "700" }}>
+            Important: Don't skip this step!
+          </strong>
+          <span style={{ fontSize: "14px", color: "#b45309", fontWeight: "500" }}>
+            Loyalty Cashback won't work until you enable it in your theme. This only takes 10 seconds.
+          </span>
+        </div>
+      </div>
+
+      {/* Grey Instructions Box */}
+      <div
+        style={{
+          maxWidth: "750px",
+          margin: "0 auto 32px auto",
+          backgroundColor: "#f9fafb",
+          border: "1px solid #f3f4f6",
+          borderRadius: "8px",
+          padding: "24px",
+          textAlign: "left",
+        }}
+      >
+        <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 12px 0" }}>
+          How to enable:
+        </h3>
+        <ol style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "10px", color: "#374151", fontSize: "14px", lineHeight: "1.5" }}>
+          <li>
+            Click the <strong style={{ color: "#111827" }}>"Enable in Theme"</strong> button below
+          </li>
+          <li>
+            Click <strong style={{ color: "#111827" }}>Save</strong> in the top right
+          </li>
+        </ol>
+      </div>
+
+      {/* Primary CTA Button */}
+      <div style={{ display: "flex", justifyContent: "center", marginTop: "32px" }}>
+        <button
+          onClick={handleEnableClick}
+          disabled={isVerifying}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            backgroundColor: "#111827",
+            color: "#ffffff",
+            borderRadius: "6px",
+            padding: "14px 48px",
+            fontWeight: "700",
+            fontSize: "16px",
+            border: "none",
+            boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+            transition: "all 0.2s ease",
+            cursor: isVerifying ? "not-allowed" : "pointer",
+          }}
+          onMouseEnter={(e) => {
+            if (!isVerifying) {
+              e.currentTarget.style.backgroundColor = "#1f2937";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isVerifying) {
+              e.currentTarget.style.backgroundColor = "#111827";
+              e.currentTarget.style.transform = "translateY(0)";
+            }
+          }}
+        >
+          {isVerifying ? (
+            <span>Verifying...</span>
+          ) : (
+            <>
+              <span style={{ color: "#f59e0b" }}>⚡</span>
+              <span>Enable in Theme</span>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
@@ -467,35 +723,46 @@ function StepFour() {
 
 function StepFive() {
   return (
-    <div style={{ padding: "16px 0", textAlign: "center", boxSizing: "border-box", width: "100%" }}>
-      {/* Centered Header & Title */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "32px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-          {/* Celebrating Icon */}
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: "#059669",
-              color: "#ffffff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              fontSize: "16px",
-              border: "2px solid #34d399",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-            }}
-          >
-            🎉
-          </div>
-          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
-            You're ready to grow!
-          </h2>
+    <div style={{ padding: "16px 0", boxSizing: "border-box", width: "100%" }}>
+      <div
+        style={{
+          backgroundColor: "#f0fdf4",
+          border: "1px solid #bbf7d0",
+          borderRadius: "12px",
+          padding: "48px 32px",
+          textAlign: "center",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "16px",
+          maxWidth: "800px",
+          margin: "0 auto",
+        }}
+      >
+        {/* Checkmark circle */}
+        <div
+          style={{
+            width: "48px",
+            height: "48px",
+            borderRadius: "50%",
+            backgroundColor: "#10b981",
+            color: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: "bold",
+            fontSize: "24px",
+            boxShadow: "0 4px 6px -1px rgba(16, 185, 129, 0.15)",
+          }}
+        >
+          ✓
         </div>
-        <p style={{ fontSize: "14px", color: "#4b5563", maxWidth: "550px", margin: "8px auto 0 auto", lineHeight: "1.6" }}>
-          Review your configurations and activate the cashback rewards program.
+        <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
+          You're all set! 🎉
+        </h2>
+        <p style={{ fontSize: "14px", color: "#4b5563", margin: 0, lineHeight: "1.6" }}>
+          Loyalty cashback store credit is active on your store.
         </p>
       </div>
     </div>
@@ -505,42 +772,61 @@ function StepFive() {
 // --- Main Standalone Onboarding Component ---
 export default function OnboardingWizard({
   shop = "",
+  themeId = "current",
+  apiKey = "4639e8c9e33fe4badd965e769d8b46da",
   bgColor = "#cfb84a",
   textColor = "#000000",
   creditIcon = "icon2",
   hideWatermark = false,
+  shopId = null,
+  initialProgram = null,
+  isExtensionEnabled = false,
 }) {
+
   const [currentStep, setCurrentStep] = useState(1);
   const [hoveredBack, setHoveredBack] = useState(false);
   const [hoveredContinue, setHoveredContinue] = useState(false);
+  const [isStepFourVerified, setIsStepFourVerified] = useState(isExtensionEnabled);
+
+  useEffect(() => {
+    setIsStepFourVerified(isExtensionEnabled);
+  }, [isExtensionEnabled]);
   const TOTAL_STEPS = 5;
 
-  const shopName = shop.replace(".myshopify.com", "");
+  const shopName = shop
+    .replace(/^https?:\/\//, "")
+    .split("/")
+    .filter(Boolean)
+    .pop()
+    .replace(".myshopify.com", "");
+
+  const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
   const customizeEmailUrl = `https://admin.shopify.com/store/${shopName}/email_templates/store_credit_issued/preview`;
+  const themeEditorUrl = `https://${cleanShop}/admin/themes/${themeId}/editor?context=apps&activateAppId=${apiKey}/loyalty_credit_app_embed`;
 
   // --- Program State for Step 2 ---
-  const [name, setName] = useState("Cashback on every purchase");
-  const [programType, setProgramType] = useState("order");
-  const [amountType, setAmountType] = useState("Fixed amount");
-  const [amount, setAmount] = useState("15");
-  const [maxAmount, setMaxAmount] = useState("");
-  const [enableExpiration, setEnableExpiration] = useState(true);
-  const [expirationType, setExpirationType] = useState("duration");
-  const [expirationDays, setExpirationDays] = useState("15");
-  const [expirationDate, setExpirationDate] = useState("2026-06-30");
-  const [enableDelay, setEnableDelay] = useState(false);
-  const [delayDays, setDelayDays] = useState("7");
-  const [channels, setChannels] = useState({ online: true, pos: false, draft: false });
-  const [eligibility, setEligibility] = useState({ d2c: true, b2b: false });
-  const [startDate, setStartDate] = useState("2026-04-24");
-  const [startTime, setStartTime] = useState("02:41");
-  const [enableEndDate, setEnableEndDate] = useState(false);
-  const [endDate, setEndDate] = useState("2026-06-30");
-  const [endTime, setEndTime] = useState("06:35");
-  const [showCartDrawerPoints, setShowCartDrawerPoints] = useState(true);
-  const [msgCart, setMsgCart] = useState("You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.");
-  const [msgProduct, setMsgProduct] = useState("Receive {loyalty_credit_amount} store credit when purchasing each item.");
-  const [notifyEmail, setNotifyEmail] = useState(false);
+  const [name, setName] = useState(initialProgram?.name || "Cashback on every purchase");
+  const [programType, setProgramType] = useState(initialProgram?.programType || "order");
+  const [amountType, setAmountType] = useState(initialProgram?.amountType || "Fixed amount");
+  const [amount, setAmount] = useState(initialProgram?.amount || "15");
+  const [maxAmount, setMaxAmount] = useState(initialProgram?.maxAmount || "");
+  const [enableExpiration, setEnableExpiration] = useState(initialProgram?.enableExpiration ?? true);
+  const [expirationType, setExpirationType] = useState(initialProgram?.expirationType || "duration");
+  const [expirationDays, setExpirationDays] = useState(initialProgram?.expirationDays || "15");
+  const [expirationDate, setExpirationDate] = useState(initialProgram?.expirationDate || "2026-06-30");
+  const [enableDelay, setEnableDelay] = useState(initialProgram?.enableDelay ?? false);
+  const [delayDays, setDelayDays] = useState(initialProgram?.delayDays || "7");
+  const [channels, setChannels] = useState(initialProgram?.channels || { online: true, pos: false, draft: false });
+  const [eligibility, setEligibility] = useState(initialProgram?.eligibility || { d2c: true, b2b: false });
+  const [startDate, setStartDate] = useState(initialProgram?.startDate || "2026-04-24");
+  const [startTime, setStartTime] = useState(initialProgram?.startTime || "02:41");
+  const [enableEndDate, setEnableEndDate] = useState(initialProgram?.enableEndDate ?? false);
+  const [endDate, setEndDate] = useState(initialProgram?.endDate || "2026-06-30");
+  const [endTime, setEndTime] = useState(initialProgram?.endTime || "06:35");
+  const [showCartDrawerPoints, setShowCartDrawerPoints] = useState(initialProgram?.showCartDrawerPoints ?? true);
+  const [msgCart, setMsgCart] = useState(initialProgram?.msgCart || "You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.");
+  const [msgProduct, setMsgProduct] = useState(initialProgram?.msgProduct || "Receive {loyalty_credit_amount} store credit when purchasing each item.");
+  const [notifyEmail, setNotifyEmail] = useState(initialProgram?.notifyEmail ?? false);
   const [previewPage, setPreviewPage] = useState("product");
 
   // --- Styling State for Step 3 ---
@@ -550,12 +836,94 @@ export default function OnboardingWizard({
   const [hideWatermarkState, setHideWatermarkState] = useState(hideWatermark);
   const [customIconSrc, setCustomIconSrc] = useState(
     creditIcon !== "icon1" &&
-    creditIcon !== "icon2" &&
-    creditIcon !== "icon3" &&
-    creditIcon !== "icon4"
+      creditIcon !== "icon2" &&
+      creditIcon !== "icon3" &&
+      creditIcon !== "icon4"
       ? creditIcon
       : null
   );
+
+  // Fetcher and save handlers
+  const fetcher = useFetcher();
+  const [saveError, setSaveError] = useState("");
+
+  const shopify = useAppBridge();
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data) {
+      if (fetcher.data.success) {
+        setSaveError("");
+        if (fetcher.data.completed) {
+          window.location.href = "/app" + window.location.search;
+        }
+      } else {
+        const errMsg = fetcher.data.error || "Failed to save settings.";
+        shopify.toast.show(errMsg, { isError: true });
+        setSaveError(errMsg);
+      }
+    }
+  }, [fetcher.state, fetcher.data, shopify]);
+
+  const handleContinueClick = () => {
+    if (currentStep === 2) {
+      setSaveError("");
+
+      const programData = {
+        id: initialProgram?.id || String(Date.now()),
+        name,
+        programType,
+        amount,
+        amountType,
+        maxAmount,
+        enableEndDate,
+        endDate,
+        endTime,
+        status: initialProgram?.status || "Active",
+        enableExpiration,
+        expirationType,
+        expirationDays,
+        expirationDate,
+        enableDelay,
+        delayDays,
+        channels,
+        eligibility,
+        msgCart,
+        msgProduct,
+        notifyEmail,
+        startDate,
+        startTime,
+        showCartDrawerPoints,
+        issued: initialProgram?.issued || "0 INR",
+        budget: initialProgram?.budget || "Unlimited",
+      };
+
+      fetcher.submit(
+        {
+          actionType: "saveProgram",
+          programData: JSON.stringify(programData),
+        },
+        { method: "POST", encType: "application/json" }
+      );
+      handleNext();
+    } else if (currentStep === 3) {
+      setSaveError("");
+
+      fetcher.submit(
+        {
+          actionType: "saveStyling",
+          shopId,
+          bgColor: bgColorState,
+          textColor: textColorState,
+          creditIcon: creditIconState === "custom" && customIconSrc ? customIconSrc : creditIconState,
+          hideWatermark: hideWatermarkState,
+        },
+        { method: "POST", encType: "application/json" }
+      );
+      handleNext();
+    } else {
+      handleNext();
+    }
+  };
 
   const handleNext = () => {
     if (currentStep < TOTAL_STEPS) {
@@ -572,7 +940,12 @@ export default function OnboardingWizard({
   };
 
   const handleComplete = () => {
-    console.log("Onboarding completed!");
+    fetcher.submit(
+      {
+        actionType: "completeOnboarding",
+      },
+      { method: "POST", encType: "application/json" }
+    );
   };
 
   const renderStepContent = () => {
@@ -654,7 +1027,14 @@ export default function OnboardingWizard({
           />
         );
       case 4:
-        return <StepFour />;
+        return (
+          <StepFour
+            themeId={themeId}
+            themeEditorUrl={themeEditorUrl}
+            isVerified={isStepFourVerified}
+            setIsVerified={setIsStepFourVerified}
+          />
+        );
       case 5:
         return <StepFive />;
       default:
@@ -725,6 +1105,34 @@ export default function OnboardingWizard({
             {renderStepContent()}
           </div>
 
+          {/* Save Error Box */}
+          {saveError && (
+            <div
+              style={{
+                width: "100%",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fee2e2",
+                borderRadius: "8px",
+                padding: "12px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                textAlign: "left",
+                boxSizing: "border-box",
+              }}
+            >
+              <span style={{ fontSize: "16px", color: "#dc2626", flexShrink: 0 }}>❌</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <strong style={{ fontSize: "14px", color: "#991b1b", fontWeight: "700" }}>
+                  Save Failed
+                </strong>
+                <span style={{ fontSize: "13px", color: "#b91c1c", fontWeight: "500" }}>
+                  {saveError}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Bottom Divider */}
           <div style={{ height: "1px", backgroundColor: "#e5e7eb", width: "100%" }} />
 
@@ -745,26 +1153,24 @@ export default function OnboardingWizard({
 
             <div>
               {currentStep < TOTAL_STEPS ? (
+                (currentStep !== 4 || isStepFourVerified) && (
+                  <button
+                    style={buttonContinueStyle}
+                    onMouseEnter={() => setHoveredContinue(true)}
+                    onMouseLeave={() => setHoveredContinue(false)}
+                    onClick={handleContinueClick}
+                  >
+                    Continue →
+                  </button>
+                )
+              ) : (
                 <button
                   style={buttonContinueStyle}
                   onMouseEnter={() => setHoveredContinue(true)}
                   onMouseLeave={() => setHoveredContinue(false)}
-                  onClick={handleNext}
-                >
-                  Continue →
-                </button>
-              ) : (
-                <button
-                  style={{
-                    ...buttonContinueStyle,
-                    backgroundColor: hoveredContinue ? "#047857" : "#059669",
-                    borderColor: "#047857",
-                  }}
-                  onMouseEnter={() => setHoveredContinue(true)}
-                  onMouseLeave={() => setHoveredContinue(false)}
                   onClick={handleComplete}
                 >
-                  Complete 🎉
+                  Go to Dashboard →
                 </button>
               )}
             </div>

@@ -5,11 +5,11 @@ dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 import "@shopify/shopify-app-react-router/adapters/node";
 import {
-  ApiVersion,
   AppDistribution,
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { MongoDBSessionStorage } from "@shopify/shopify-app-session-storage-mongodb";
+import { restResources } from "@shopify/shopify-api/rest/admin/2026-01";
 
 const mongoSessionStorage = new MongoDBSessionStorage(
   new URL(process.env.MONGODB_URI),
@@ -30,6 +30,7 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: mongoSessionStorage,
   distribution: AppDistribution.AppStore,
+  restResources,
   future: {
     expiringOfflineAccessTokens: true,
   },

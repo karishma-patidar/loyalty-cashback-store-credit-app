@@ -146,6 +146,109 @@ export async function deleteShopPrograms(admin, shopId) {
   return { success: true };
 }
 
+/**
+ * Fetch the widget styling configurations from Shopify metafields.
+ * @param {object} admin - Authenticated Shopify Admin client
+ * @returns {Promise<{ shopId: string, bgColor: string, textColor: string, creditIcon: string, hideWatermark: boolean }>}
+ */
+export async function getShopStyling(admin) {
+  const query = `#graphql
+    query GetStylingMetafields {
+      shop {
+        id
+        bg_color: metafield(namespace: "loyalty_cashback_app", key: "widget_bg_color") {
+          value
+        }
+        text_color: metafield(namespace: "loyalty_cashback_app", key: "widget_text_color") {
+          value
+        }
+        credit_icon: metafield(namespace: "loyalty_cashback_app", key: "widget_credit_icon") {
+          value
+        }
+        hide_watermark: metafield(namespace: "loyalty_cashback_app", key: "hide_watermark") {
+          value
+        }
+      }
+    }
+  `;
+
+  const response = await admin.graphql(query);
+  const data = await response.json();
+  const shop = data?.data?.shop;
+
+  return {
+    shopId: shop?.id || null,
+    bgColor: shop?.bg_color?.value || "#cfb84a",
+    textColor: shop?.text_color?.value || "#000000",
+    creditIcon: shop?.credit_icon?.value || "icon2",
+    hideWatermark: shop?.hide_watermark?.value === "true",
+  };
+}
+
+/**
+ * Set/Save the widget styling configurations in Shopify metafields.
+ * @param {object} admin - Authenticated Shopify Admin client
+ * @param {string} shopId - Shop Admin GraphQL GID
+ * @param {object} styling - Widget styling configurations
+ * @returns {Promise<{ success: boolean }>}
+ */
+export async function setShopStyling(admin, shopId, { bgColor, textColor, creditIcon, hideWatermark }) {
+  const mutation = `#graphql
+    mutation SetStylingMetafields($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        userErrors {
+          message
+        }
+      }
+    }
+  `;
+
+  const response = await admin.graphql(mutation, {
+    variables: {
+      metafields: [
+        {
+          ownerId: shopId,
+          namespace: "loyalty_cashback_app",
+          key: "widget_bg_color",
+          type: "single_line_text_field",
+          value: bgColor,
+        },
+        {
+          ownerId: shopId,
+          namespace: "loyalty_cashback_app",
+          key: "widget_text_color",
+          type: "single_line_text_field",
+          value: textColor,
+        },
+        {
+          ownerId: shopId,
+          namespace: "loyalty_cashback_app",
+          key: "widget_credit_icon",
+          type: "single_line_text_field",
+          value: creditIcon,
+        },
+        {
+          ownerId: shopId,
+          namespace: "loyalty_cashback_app",
+          key: "hide_watermark",
+          type: "single_line_text_field",
+          value: String(hideWatermark),
+        },
+      ],
+    },
+  });
+
+  const data = await response.json();
+  const userErrors = data?.data?.metafieldsSet?.userErrors;
+
+  if (userErrors && userErrors.length > 0) {
+    throw new Error(userErrors[0].message);
+  }
+
+  return { success: true };
+}
+
+
 
 
 

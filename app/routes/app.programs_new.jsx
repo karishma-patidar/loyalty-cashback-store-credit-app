@@ -9,7 +9,7 @@ import {
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import { getShopPrograms, setShopPrograms } from "../services/graphql.server";
+import { getShopPrograms, setShopPrograms, getShopStyling } from "../services/graphql.server";
 import { PreviewSection } from "../components/styling/PreviewSection.jsx";
 import { ProgramScheduling } from "../components/program/ProgramScheduling.jsx";
 import { PromotionSettings } from "../components/program/PromotionSettings.jsx";
@@ -34,41 +34,17 @@ export const loader = async ({ request }) => {
   }
 
   // Get Styling settings from metafields to style the preview section dynamically
-  const stylingQuery = `#graphql
-    query GetStylingMetafields {
-      shop {
-        bg_color: metafield(namespace: "loyalty_cashback_app", key: "widget_bg_color") {
-          value
-        }
-        text_color: metafield(namespace: "loyalty_cashback_app", key: "widget_text_color") {
-          value
-        }
-        credit_icon: metafield(namespace: "loyalty_cashback_app", key: "widget_credit_icon") {
-          value
-        }
-        hide_watermark: metafield(namespace: "loyalty_cashback_app", key: "hide_watermark") {
-          value
-        }
-      }
-    }
-  `;
-
   let bgColor = "#cfb84a";
   let textColor = "#000000";
   let creditIcon = "icon2";
   let hideWatermark = false;
 
   try {
-    const response = await admin.graphql(stylingQuery);
-    const data = await response.json();
-    const shop = data?.data?.shop;
-    if (shop) {
-      if (shop.bg_color?.value) bgColor = shop.bg_color.value;
-      if (shop.text_color?.value) textColor = shop.text_color.value;
-      if (shop.credit_icon?.value) creditIcon = shop.credit_icon.value;
-      if (shop.hide_watermark?.value)
-        hideWatermark = shop.hide_watermark.value === "true";
-    }
+    const styling = await getShopStyling(admin);
+    bgColor = styling.bgColor;
+    textColor = styling.textColor;
+    creditIcon = styling.creditIcon;
+    hideWatermark = styling.hideWatermark;
   } catch (err) {
     console.error("Error loading styling in programs_new loader:", err);
   }
