@@ -32,6 +32,31 @@ export async function connectMongoDB() {
   return cached.conn;
 }
 
+let cachedLoyalty = global.__mongooseLoyaltyConnection;
+if (!cachedLoyalty) {
+  cachedLoyalty = global.__mongooseLoyaltyConnection = { conn: null, promise: null };
+}
+
+export async function connectLoyaltyDB() {
+  if (cachedLoyalty.conn) {
+    return cachedLoyalty.conn;
+  }
+
+  if (!cachedLoyalty.promise) {
+    const opts = {
+      dbName: "loyalty-cashback-store-credit",
+    };
+
+    cachedLoyalty.promise = mongoose.createConnection(MONGODB_URI, opts).asPromise().then((conn) => {
+      console.log("✅ Connected successfully to MongoDB (loyalty-cashback-store-credit)");
+      return conn;
+    });
+  }
+
+  cachedLoyalty.conn = await cachedLoyalty.promise;
+  return cachedLoyalty.conn;
+}
+
 // Make connectMongoDB also the default export to support different import styles
 export default connectMongoDB;
 
@@ -70,18 +95,20 @@ export const AppSettingsModel = mongoose.models.AppSettings || mongoose.model("A
 
 export async function getAppSettings(shop) {
   if (!shop) return null;
-  await connectMongoDB();
-  let settings = await AppSettingsModel.findOne({ shop });
+  const conn = await connectLoyaltyDB();
+  const Model = conn.models.AppSettings || conn.model("AppSettings", appSettingsSchema);
+  let settings = await Model.findOne({ shop });
   if (!settings) {
-    settings = await AppSettingsModel.create({ shop, onboardingCompleted: false });
+    settings = await Model.create({ shop, onboardingCompleted: false });
   }
   return settings;
 }
 
 export async function updateAppSettings(shop, updates) {
   if (!shop) return null;
-  await connectMongoDB();
-  return await AppSettingsModel.findOneAndUpdate(
+  const conn = await connectLoyaltyDB();
+  const Model = conn.models.AppSettings || conn.model("AppSettings", appSettingsSchema);
+  return await Model.findOneAndUpdate(
     { shop },
     { $set: updates },
     { new: true, upsert: true }

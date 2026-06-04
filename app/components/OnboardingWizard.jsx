@@ -19,7 +19,7 @@ function WizardProgress({ current, total }) {
           width: "100%",
           maxWidth: "100%",
           margin: "0 auto 32px auto",
-          padding: "0 16px",
+          // padding: "0 16px",
           boxSizing: "border-box",
         }}
       >
@@ -38,8 +38,8 @@ function WizardProgress({ current, total }) {
             fontSize: "14px",
             fontWeight: "600",
             border: "2px solid #e5e7eb",
-            backgroundColor: "#f3f4f6",
-            color: "#9ca3af",
+            backgroundColor: "#E5E7EB",
+            color: "#6B7280",
             flexShrink: 0,
             transition: "all 0.3s ease",
           };
@@ -47,8 +47,8 @@ function WizardProgress({ current, total }) {
           if (isActive) {
             circleStyle = {
               ...circleStyle,
-              border: "2px solid #2c6ecb",
-              backgroundColor: "#2c6ecb",
+              border: "2px solid #2D7FF9",
+              backgroundColor: "#2D7FF9",
               color: "#ffffff",
               boxShadow: "0 0 0 4px rgba(44, 110, 203, 0.15)",
             };
@@ -64,7 +64,7 @@ function WizardProgress({ current, total }) {
           // Connecting Line Style
           let lineStyle = {
             flex: 1,
-            height: "2px",
+            height: "2.4px",
             backgroundColor: "#e5e7eb",
             transition: "all 0.3s ease",
             margin: "0 8px",
@@ -94,33 +94,15 @@ function WizardProgress({ current, total }) {
 // --- Step Components ---
 
 function StepOne() {
-  const [hoveredCard, setHoveredCard] = useState(null);
-
   const cardBaseStyle = {
-    backgroundColor: "#f0fdf4",
-    borderRadius: "12px",
-    padding: "16px",
+    backgroundColor: "#ECFDF5",
+    borderRadius: "8px",
+    padding: "12px",
     display: "flex",
     alignItems: "center",
-    gap: "16px",
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    minHeight: "80px",
+    gap: "12px",
     textAlign: "left",
-    border: "1px solid #dcfce7",
     boxSizing: "border-box",
-  };
-
-  const getCardStyle = (index) => {
-    if (hoveredCard === index) {
-      return {
-        ...cardBaseStyle,
-        backgroundColor: "#e6f7ed",
-        transform: "translateY(-1px)",
-        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.05)",
-      };
-    }
-    return cardBaseStyle;
   };
 
   return (
@@ -128,30 +110,11 @@ function StepOne() {
       {/* Hero Header & Title */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-          {/* Gold Coin Icon */}
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: "#d97706",
-              color: "#ffffff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              fontSize: "18px",
-              border: "2px solid #f59e0b",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-            }}
-          >
-            $
-          </div>
-          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
-            Welcome to Loyalty Cashback Store Credit!
+          <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
+            👋 Welcome to Loyalty Cashback Store Credit!
           </h2>
         </div>
-        <p style={{ fontSize: "14px", color: "#4b5563", maxWidth: "550px", margin: "8px auto 0 auto", lineHeight: "1.6" }}>
+        <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", maxWidth: "550px", margin: "8px auto 0 auto" }}>
           Let's set up your store credit program to reward customers and boost repeat purchases right away!
         </p>
       </div>
@@ -161,136 +124,100 @@ function StepOne() {
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          gap: "16px",
+          gap: "12px",
           width: "100%",
           margin: "0 auto",
           boxSizing: "border-box",
         }}
       >
         {/* Card 1: Cashback */}
-        <div
-          style={getCardStyle(1)}
-          onMouseEnter={() => setHoveredCard(1)}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
+        <div style={cardBaseStyle}>
           <div
             style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "20px",
+              fontSize: "1.5rem",
               flexShrink: 0,
             }}
           >
-            🪙
+            💰
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <h3 style={{ fontWeight: "bold", fontSize: "14px", color: "#111827", margin: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}>
+            <h3 style={{ fontWeight: "bold", fontSize: ".9rem", color: "#111827", margin: 0 }}>
               Cashback on every purchase
             </h3>
-            <p style={{ fontSize: "12px", color: "#4b5563", margin: 0, fontWeight: "500" }}>
+            <p style={{ fontSize: "12px", color: "#6b7280", margin: 0, fontWeight: "500" }}>
               Reward customers per item or per order
             </p>
           </div>
         </div>
 
         {/* Card 2: Expiry */}
-        <div
-          style={getCardStyle(2)}
-          onMouseEnter={() => setHoveredCard(2)}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
+        <div style={cardBaseStyle}>
           <div
             style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "20px",
+              fontSize: "1.5rem",
               flexShrink: 0,
             }}
           >
-            ⏱️
+            ⏳
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <h3 style={{ fontWeight: "bold", fontSize: "14px", color: "#111827", margin: 0 }}>
-              Credit expiry control
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <h3 style={{ fontWeight: "bold", fontSize: ".9rem", color: "#111827", margin: 0 }}>
+              Smart Credit Expiry Control
             </h3>
-            <p style={{ fontSize: "12px", color: "#4b5563", margin: 0, fontWeight: "500" }}>
-              Set expiry to create urgency
+            <p style={{ fontSize: "12px", color: "#6b7280", margin: 0, fontWeight: "500" }}>
+              Set credit expiry to drive faster redemptions
             </p>
           </div>
         </div>
 
         {/* Card 3: Custom Branding */}
-        <div
-          style={getCardStyle(3)}
-          onMouseEnter={() => setHoveredCard(3)}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
+        <div style={cardBaseStyle}>
           <div
             style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "20px",
+              fontSize: "1.5rem",
               flexShrink: 0,
             }}
           >
             🎨
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <h3 style={{ fontWeight: "bold", fontSize: "14px", color: "#111827", margin: 0 }}>
-              Custom branding
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <h3 style={{ fontWeight: "bold", fontSize: ".9rem", color: "#111827", margin: 0 }}>
+              Custom Branding Experience
             </h3>
-            <p style={{ fontSize: "12px", color: "#4b5563", margin: 0, fontWeight: "500" }}>
+            <p style={{ fontSize: "12px", color: "#6b7280", margin: 0, fontWeight: "500" }}>
               Match colors to your store design
             </p>
           </div>
         </div>
 
         {/* Card 4: Analytics */}
-        <div
-          style={getCardStyle(4)}
-          onMouseEnter={() => setHoveredCard(4)}
-          onMouseLeave={() => setHoveredCard(null)}
-        >
+        <div style={cardBaseStyle}>
           <div
             style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "20px",
+              fontSize: "1.5rem",
               flexShrink: 0,
             }}
           >
             📊
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <h3 style={{ fontWeight: "bold", fontSize: "14px", color: "#111827", margin: 0 }}>
-              Analytics & insights
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <h3 style={{ fontWeight: "bold", fontSize: ".9rem", color: "#111827", margin: 0 }}>
+              Advanced Analytics & Insights
             </h3>
-            <p style={{ fontSize: "12px", color: "#4b5563", margin: 0, fontWeight: "500" }}>
-              Track issued, redeemed & AOV
+            <p style={{ fontSize: "12px", color: "#6b7280", margin: 0, fontWeight: "500" }}>
+              Track issued, redemptions, customer engagement & AOV
             </p>
           </div>
         </div>
@@ -311,35 +238,17 @@ function StepTwo(props) {
       ).toFixed(2);
 
   return (
-    <div style={{ padding: "16px 0", textAlign: "center", boxSizing: "border-box", width: "100%" }}>
+    <div style={{ textAlign: "center", boxSizing: "border-box", width: "100%" }}>
       {/* Centered Header & Title */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-          {/* Percentage Icon */}
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: "#2563eb",
-              color: "#ffffff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              fontSize: "16px",
-              border: "2px solid #60a5fa",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-            }}
-          >
-            %
-          </div>
-          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
-            Create your first cashback offer
+
+          <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
+            💰 Create Your First Cashback Program
           </h2>
         </div>
-        <p style={{ fontSize: "14px", color: "#4b5563", maxWidth: "550px", margin: "8px auto 0 auto", lineHeight: "1.6" }}>
-          🎉 Choose how you want to reward customers — per order or per product.
+        <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", maxWidth: "550px", margin: "8px auto 0 auto" }}>
+          Reward customers on every purchase and encourage repeat orders with a customized cashback program.
         </p>
       </div>
 
@@ -366,34 +275,16 @@ function StepTwo(props) {
 
 function StepThree(props) {
   return (
-    <div style={{ padding: "16px 0", textAlign: "center", boxSizing: "border-box", width: "100%" }}>
+    <div style={{ textAlign: "center", boxSizing: "border-box", width: "100%" }}>
       {/* Centered Header & Title */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px" }}>
-          {/* Palette Icon */}
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              backgroundColor: "#db2777",
-              color: "#ffffff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: "bold",
-              fontSize: "16px",
-              border: "2px solid #f472b6",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.05)",
-            }}
-          >
-            🎨
-          </div>
-          <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
-            Brand your widget style
+
+          <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
+            🎨 Brand your widget style
           </h2>
         </div>
-        <p style={{ fontSize: "14px", color: "#4b5563", maxWidth: "550px", margin: "8px auto 0 auto", lineHeight: "1.6" }}>
+        <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", maxWidth: "550px", margin: "8px auto 0 auto" }}>
           Customize widget colors, icons, and text styles to match your storefront branding.
         </p>
       </div>
@@ -439,7 +330,7 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
     try {
       const res = await fetch("/api/get-embeded?theme_id=" + tid);
       const content = await res.json();
-      
+
       if (content?.data?.error) {
         setErrorMsg(content.data.error);
         setIsVerifying(false);
@@ -519,16 +410,15 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
 
   if (isVerified) {
     return (
-      <div style={{ padding: "16px 0", boxSizing: "border-box", width: "100%", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}>
+      <div style={{ boxSizing: "border-box", width: "100%", fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
         {/* Centered Header & Title */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "32px", textAlign: "center" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-            <span style={{ fontSize: "28px", color: "#f59e0b" }}>⚡</span>
-            <h2 style={{ fontSize: "28px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
-              Theme Extension Enabled
+            <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
+              ⚡ Theme Extension Enabled
             </h2>
           </div>
-          <p style={{ fontSize: "16px", color: "#4b5563", margin: "4px 0 0 0", fontWeight: "400" }}>
+          <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", margin: "4px 0 0 0", fontWeight: "400" }}>
             Great news! Loyalty Cashback is now active on your theme.
           </p>
         </div>
@@ -579,17 +469,17 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
     );
   }
   return (
-    <div style={{ padding: "16px 0", boxSizing: "border-box", width: "100%", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" }}>
+    <div style={{ boxSizing: "border-box", width: "100%", fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif' }}>
 
       {/* Centered Header & Title */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", marginBottom: "24px", textAlign: "center" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
           <span style={{ fontSize: "28px", color: "#f59e0b" }}>⚡</span>
-          <h2 style={{ fontSize: "28px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
             One Last Step - Activate Loyalty Cashback
           </h2>
         </div>
-        <p style={{ fontSize: "16px", color: "#4b5563", margin: "4px 0 0 0", fontWeight: "400" }}>
+        <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", margin: "4px 0 0 0", fontWeight: "400" }}>
           This is required for Loyalty Cashback to appear on your store.
         </p>
       </div>
@@ -651,8 +541,8 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
       {/* Grey Instructions Box */}
       <div
         style={{
-          maxWidth: "750px",
-          margin: "0 auto 32px auto",
+          maxWidth: "740px",
+          margin: "0 auto 28px auto",
           backgroundColor: "#f9fafb",
           border: "1px solid #f3f4f6",
           borderRadius: "8px",
@@ -723,7 +613,7 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
 
 function StepFive() {
   return (
-    <div style={{ padding: "16px 0", boxSizing: "border-box", width: "100%" }}>
+    <div style={{ boxSizing: "border-box", width: "100%" }}>
       <div
         style={{
           backgroundColor: "#f0fdf4",
@@ -758,10 +648,10 @@ function StepFive() {
         >
           ✓
         </div>
-        <h2 style={{ fontSize: "24px", fontWeight: "800", color: "#111827", margin: 0, letterSpacing: "-0.025em" }}>
+        <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
           You're all set! 🎉
         </h2>
-        <p style={{ fontSize: "14px", color: "#4b5563", margin: 0, lineHeight: "1.6" }}>
+        <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", margin: 0 }}>
           Loyalty cashback store credit is active on your store.
         </p>
       </div>
@@ -787,6 +677,7 @@ export default function OnboardingWizard({
   const [hoveredBack, setHoveredBack] = useState(false);
   const [hoveredContinue, setHoveredContinue] = useState(false);
   const [isStepFourVerified, setIsStepFourVerified] = useState(isExtensionEnabled);
+  const [isCompleting, setIsCompleting] = useState(false);
 
   useEffect(() => {
     setIsStepFourVerified(isExtensionEnabled);
@@ -829,6 +720,15 @@ export default function OnboardingWizard({
   const [notifyEmail, setNotifyEmail] = useState(initialProgram?.notifyEmail ?? false);
   const [previewPage, setPreviewPage] = useState("product");
 
+  // Sync previewPage with programType selection
+  useEffect(() => {
+    if (programType === "order") {
+      setPreviewPage("cart");
+    } else if (programType === "product") {
+      setPreviewPage("product");
+    }
+  }, [programType]);
+
   // --- Styling State for Step 3 ---
   const [bgColorState, setBgColorState] = useState(bgColor);
   const [textColorState, setTextColorState] = useState(textColor);
@@ -860,6 +760,7 @@ export default function OnboardingWizard({
         const errMsg = fetcher.data.error || "Failed to save settings.";
         shopify.toast.show(errMsg, { isError: true });
         setSaveError(errMsg);
+        setIsCompleting(false);
       }
     }
   }, [fetcher.state, fetcher.data, shopify]);
@@ -940,6 +841,7 @@ export default function OnboardingWizard({
   };
 
   const handleComplete = () => {
+    setIsCompleting(true);
     fetcher.submit(
       {
         actionType: "completeOnboarding",
@@ -1044,31 +946,40 @@ export default function OnboardingWizard({
 
   // Button style definitions
   const buttonBackStyle = {
-    backgroundColor: hoveredBack ? "#f9fafb" : "transparent",
-    border: "1px solid #d1d5db",
-    color: "#374151",
-    borderRadius: "8px",
-    padding: "10px 20px",
+    backgroundColor: "transparent",
+    border: "none",
+    color: "#6b7280",
+    textDecoration: hoveredBack ? "underline" : "none",
+    padding: "10px 0",
     fontWeight: "600",
-    fontSize: "14px",
+    fontSize: ".95rem",
     cursor: "pointer",
-    transition: "background-color 0.2s, border-color 0.2s",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    outline: "none",
   };
 
   const buttonContinueStyle = {
-    backgroundColor: hoveredContinue ? "#1f2937" : "#111827",
-    border: "1px solid #111827",
+    backgroundColor: hoveredContinue ? "#374151" : "#111827",
+    border: hoveredContinue ? "1px solid #374151" : "1px solid #111827",
     color: "#ffffff",
     borderRadius: "8px",
     padding: "10px 24px",
     fontWeight: "600",
     fontSize: "14px",
     cursor: "pointer",
-    transition: "background-color 0.2s",
+    transition: "background-color 0.2s, border-color 0.2s",
+    outline: "none",
   };
 
   return (
     <s-page>
+      <style>{`
+        @keyframes onboarding-spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       <div
         style={{
           minHeight: "80vh",
@@ -1077,22 +988,31 @@ export default function OnboardingWizard({
           justifyContent: "center",
           alignItems: "center",
           color: "#111827",
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+          fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "San Francisco", "Segoe UI", Roboto, "Helvetica Neue", sans-serif',
           padding: "32px 0",
           boxSizing: "border-box",
           width: "100%"
         }}
       >
+        <div style={{ textAlign: "left", alignSelf: "flex-start", marginBottom: "24px", width: "100%", boxSizing: "border-box" }}>
+          <h1 style={{ fontSize: "20px", fontWeight: "700", color: "#111827", margin: "0 0 8px 0", letterSpacing: "-0.025em" }}>
+            Welcome to Loyalty Cashback Store Credit
+          </h1>
+          <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", margin: 0 }}>
+            Let's get your loyalty cashback program set up
+          </p>
+        </div>
+
         <div
           style={{
             width: "100%",
             backgroundColor: "#ffffff",
             borderRadius: "16px",
             border: "1px solid #e5e7eb",
-            padding: "32px",
+            padding: "25px",
             display: "flex",
             flexDirection: "column",
-            gap: "24px",
+            gap: "15px",
             boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.025)",
             boxSizing: "border-box",
           }}
@@ -1101,7 +1021,7 @@ export default function OnboardingWizard({
           <WizardProgress current={currentStep} total={TOTAL_STEPS} />
 
           {/* Main Content Section */}
-          <div style={{ minHeight: "300px", display: "flex", flexDirection: "column", justifySelf: "center", justifyContent: "center", boxSizing: "border-box", width: "100%" }}>
+          <div style={{ display: "flex", flexDirection: "column", justifySelf: "center", justifyContent: "center", boxSizing: "border-box", width: "100%" }}>
             {renderStepContent()}
           </div>
 
@@ -1133,11 +1053,10 @@ export default function OnboardingWizard({
             </div>
           )}
 
-          {/* Bottom Divider */}
-          <div style={{ height: "1px", backgroundColor: "#e5e7eb", width: "100%" }} />
+
 
           {/* Shared Navigation Buttons container */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box", marginTop: "15px" }}>
             <div>
               {currentStep > 1 && (
                 <button
@@ -1169,8 +1088,37 @@ export default function OnboardingWizard({
                   onMouseEnter={() => setHoveredContinue(true)}
                   onMouseLeave={() => setHoveredContinue(false)}
                   onClick={handleComplete}
+                  disabled={isCompleting}
                 >
-                  Go to Dashboard →
+                  {isCompleting ? (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                      <svg
+                        style={{
+                          animation: "onboarding-spin 1s linear infinite",
+                          width: "16px",
+                          height: "16px",
+                          color: "#ffffff"
+                        }}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <circle
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeDasharray="32"
+                          strokeLinecap="round"
+                          fill="none"
+                        />
+                      </svg>
+                      <span>Loading...</span>
+                    </span>
+                  ) : (
+                    "Go to Dashboard →"
+                  )}
                 </button>
               )}
             </div>

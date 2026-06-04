@@ -173,6 +173,16 @@ export default function NewProgram() {
   );
 
   const [previewPage, setPreviewPage] = useState("product");
+
+  // Sync previewPage with programType selection
+  useEffect(() => {
+    if (programType === "order") {
+      setPreviewPage("cart");
+    } else if (programType === "product") {
+      setPreviewPage("product");
+    }
+  }, [programType]);
+
   const [currentStatus, setCurrentStatus] = useState(
     initialProgram?.status || "Active",
   );

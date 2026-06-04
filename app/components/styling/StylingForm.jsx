@@ -94,8 +94,8 @@ export function StylingForm({
             <s-color-field ref={bgColorFieldRef} label="Background color" value={bgColor}></s-color-field>
             <s-color-field ref={textColorFieldRef} label="Text primary color" value={textColor}></s-color-field>
 
-            <s-stack direction="block" gap="tight">
-              <s-text color="subdued" variant="bold">
+            <s-stack direction="block" gap="small">
+              <s-text variant="bold">
                 Credit icon
               </s-text>
               <s-stack direction="inline" gap="base" alignment="center">

@@ -61,17 +61,19 @@ export function PreviewSection({
   return (
     <s-stack direction="block" gap="base">
       {/* Header row of Preview card */}
-      <s-stack direction="inline" alignment="center">
-        <s-heading variant="headingSm">Preview section</s-heading>
-        <s-box flex="1" />
-        <s-select
-          value={previewPage}
-          onInput={(e) => setPreviewPage(e.target.value)}
-        >
-          <s-option value="product">Page: Product</s-option>
-          <s-option value="cart">Page: Cart</s-option>
-        </s-select>
-      </s-stack>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "12px", flexWrap: "nowrap", marginBottom: "8px" }}>
+        <s-heading variant="headingSm" style={{ margin: 0 }}>Preview section</s-heading>
+        <div style={{ width: "100px", flexShrink: 0 }}>
+          <s-select
+            value={previewPage}
+            onInput={(e) => setPreviewPage(e.target.value)}
+            style={{ width: "100%" }}
+          >
+            <s-option value="product">Product</s-option>
+            <s-option value="cart">Cart</s-option>
+          </s-select>
+        </div>
+      </div>
 
       {/* Container for Preview card */}
       <s-section>
@@ -141,7 +143,7 @@ export function PreviewSection({
                     </p>
                     {!hideWatermark && (
                       <p style={{ margin: "2px 0 0", fontSize: "10px", opacity: 0.7, lineHeight: "1", color: "inherit" }}>
-                        Powered by <span style={{ textDecoration: "underline" }}>Getkoin.io</span>
+                        Powered by <span style={{ textDecoration: "underline" }}>Getloyalty.io</span>
                       </p>
                     )}
                   </div>
@@ -149,17 +151,33 @@ export function PreviewSection({
               )}
 
               {/* Checkout Button */}
-              <s-box paddingBlockStart="4">
-                <s-button variant="primary" block>
+              <s-box paddingBlockStart="4" style={{ width: "100%" }}>
+                <button
+                  type="button"
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#1a1a1a",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 16px",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    display: "block",
+                    boxSizing: "border-box",
+                    textAlign: "center"
+                  }}
+                >
                   Checkout
-                </s-button>
+                </button>
               </s-box>
             </s-stack>
           )}
 
           {/* PRODUCT PAGE PREVIEW */}
           {previewPage === "product" && (
-            <s-stack gap="base" >
+            <s-stack gap="base" style={{ width: "100%", display: "flex", flexDirection: "column", gap: "20px" }}>
               <img
                 src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
                 alt="Example T-Shirt"
@@ -192,7 +210,7 @@ export function PreviewSection({
                     </p>
                     {!hideWatermark && (
                       <p style={{ margin: "2px 0 0", fontSize: "10px", opacity: 0.7, lineHeight: "1", color: "inherit" }}>
-                        Powered by <span style={{ textDecoration: "underline" }}>Getkoin.io</span>
+                        Powered by <span style={{ textDecoration: "underline" }}>Getloyalty.io</span>
                       </p>
                     )}
                   </div>
@@ -200,10 +218,26 @@ export function PreviewSection({
               )}
 
               {/* Add to cart Button */}
-              <s-box paddingBlockStart="4">
-                <s-button variant="primary" block>
+              <s-box paddingBlockStart="4" style={{ width: "100%" }}>
+                <button
+                  type="button"
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#1a1a1a",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 16px",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    display: "block",
+                    boxSizing: "border-box",
+                    textAlign: "center"
+                  }}
+                >
                   Add to cart
-                </s-button>
+                </button>
               </s-box>
             </s-stack>
           )}

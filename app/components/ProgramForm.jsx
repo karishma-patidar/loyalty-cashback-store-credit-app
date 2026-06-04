@@ -19,7 +19,7 @@ export function ProgramForm({
   setShowCartDrawerPoints,
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "24px", width: "100%", boxSizing: "border-box" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "14px", width: "100%", boxSizing: "border-box" }}>
       {/* Program Name */}
       <ProgramNameCard name={name} setName={setName} />
 
@@ -38,10 +38,10 @@ export function ProgramForm({
       />
 
       {/* Cart Drawer Visibility */}
-      <CartDrawerVisibilityCard
+      {/* <CartDrawerVisibilityCard
         showCartDrawerPoints={showCartDrawerPoints}
         setShowCartDrawerPoints={setShowCartDrawerPoints}
-      />
+      /> */}
     </div>
   );
 }
