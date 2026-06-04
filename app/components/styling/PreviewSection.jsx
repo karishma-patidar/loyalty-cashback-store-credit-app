@@ -83,24 +83,23 @@ export function PreviewSection({
 
   return (
     <s-stack direction="block" gap="base">
-      {/* Header row of Preview card */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "12px", flexWrap: "nowrap", marginBottom: "8px" }}>
-        <s-heading variant="headingSm" style={{ margin: 0 }}>Preview section</s-heading>
-        <div style={{ width: "100px", flexShrink: 0 }}>
-          <s-select
-            value={previewPage}
-            onInput={(e) => setPreviewPage(e.target.value)}
-            style={{ width: "100%" }}
-          >
-            <s-option value="product">Product</s-option>
-            <s-option value="cart">Cart</s-option>
-          </s-select>
-        </div>
-      </div>
-
       {/* Container for Preview card */}
       <s-section>
-        <s-box padding="5" style={{ minHeight: "380px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+        <s-box padding="5" style={{ minHeight: "380px", display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+          {/* Header row of Preview card */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: "12px", flexWrap: "nowrap", marginBottom: "20px" }}>
+            <s-heading variant="headingSm" style={{ margin: 0 }}>Preview section</s-heading>
+            <div style={{ width: "130px", flexShrink: 0 }}>
+              <s-select
+                value={previewPage}
+                onInput={(e) => setPreviewPage(e.target.value)}
+                style={{ width: "100%" }}
+              >
+                <s-option value="product">Product</s-option>
+                <s-option value="cart">Cart</s-option>
+              </s-select>
+            </div>
+          </div>
 
           {/* CART PAGE PREVIEW */}
           {previewPage === "cart" && (
@@ -121,6 +120,7 @@ export function PreviewSection({
                 <img
                   src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
                   alt="Example T-Shirt"
+                  style={{ width: "48px", height: "48px", objectFit: "cover", borderRadius: "4px", border: "1px solid #f1f1f1" }}
                 />
                 <s-stack direction="block" gap="none">
                   <s-text variant="bold">Example T-Shirt</s-text>
@@ -185,12 +185,13 @@ export function PreviewSection({
                     width: "100%",
                     backgroundColor: "#1a1a1a",
                     color: "#ffffff",
+                    opacity: 0.6,
                     border: "none",
                     borderRadius: "8px",
                     padding: "10px 16px",
                     fontSize: "14px",
                     fontWeight: "600",
-                    cursor: "pointer",
+                    cursor: "not-allowed",
                     display: "block",
                     boxSizing: "border-box",
                     textAlign: "center"
@@ -208,6 +209,7 @@ export function PreviewSection({
               <img
                 src="https://cdn.shopify.com/s/files/1/0963/4349/0932/files/tshirts_100x100.jpg?v=1765864990"
                 alt="Example T-Shirt"
+                style={{ width: "100%", height: "200px", objectFit: "cover", borderRadius: "8px" }}
               />
 
               <s-stack direction="block" gap="none">
@@ -256,12 +258,13 @@ export function PreviewSection({
                     width: "100%",
                     backgroundColor: "#1a1a1a",
                     color: "#ffffff",
+                    opacity: 0.6,
                     border: "none",
                     borderRadius: "8px",
                     padding: "10px 16px",
                     fontSize: "14px",
                     fontWeight: "600",
-                    cursor: "pointer",
+                    cursor: "not-allowed",
                     display: "block",
                     boxSizing: "border-box",
                     textAlign: "center"

@@ -91,7 +91,6 @@ const appSettingsSchema = new mongoose.Schema({
   onboardingCompleted: { type: Boolean, default: false }
 }, { timestamps: true });
 
-export const AppSettingsModel = mongoose.models.AppSettings || mongoose.model("AppSettings", appSettingsSchema);
 
 export async function getAppSettings(shop) {
   if (!shop) return null;

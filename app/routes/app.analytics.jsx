@@ -6,6 +6,8 @@ import {
     ResponsiveContainer,
     LineChart,
     Line,
+    AreaChart,
+    Area,
     BarChart,
     Bar,
     XAxis,
@@ -908,9 +910,15 @@ export default function Analytics() {
                                             ? <ChartEmptyState />
                                             : (
                                                 <ResponsiveContainer width="100%" height={260}>
-                                                    <LineChart data={rewardsPerDay}
+                                                    <AreaChart data={rewardsPerDay}
                                                         margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" />
+                                                        <defs>
+                                                            <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
+                                                                <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3}/>
+                                                                <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0}/>
+                                                            </linearGradient>
+                                                        </defs>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" vertical={false} />
                                                         <XAxis dataKey="date"
                                                             tick={{ fontSize: 11, fill: "#8c9196" }}
                                                             tickLine={false} axisLine={false} />
@@ -920,11 +928,11 @@ export default function Analytics() {
                                                             tickFormatter={(v) => `${currencySymbols[selectedCurrency] || ""}${v}`} />
                                                         <RechartsTooltip
                                                             content={<CustomChartTooltip currencyCode={selectedCurrency} />} />
-                                                        <Line type="monotone" dataKey="amount" name="Issued"
+                                                        <Area type="monotone" dataKey="amount" name="Issued"
                                                             stroke={CHART_COLORS.primary} strokeWidth={2.5}
-                                                            dot={{ r: 4, fill: CHART_COLORS.primary, strokeWidth: 0 }}
+                                                            fillOpacity={1} fill="url(#colorAmount)"
                                                             activeDot={{ r: 6 }} />
-                                                    </LineChart>
+                                                    </AreaChart>
                                                 </ResponsiveContainer>
                                             )
                                     }
@@ -948,8 +956,8 @@ export default function Analytics() {
                                                 <ResponsiveContainer width="100%" height={260}>
                                                     <BarChart data={customerFrequencyByDate}
                                                         margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
-                                                        barCategoryGap="30%" barGap={4}>
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" />
+                                                        barCategoryGap="25%" barGap={6}>
+                                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" vertical={false} />
                                                         <XAxis dataKey="date"
                                                             tick={{ fontSize: 11, fill: "#8c9196" }}
                                                             tickLine={false} axisLine={false} />
@@ -957,12 +965,13 @@ export default function Analytics() {
                                                             tick={{ fontSize: 11, fill: "#8c9196" }}
                                                             tickLine={false} axisLine={false} allowDecimals={false} />
                                                         <RechartsTooltip
-                                                            content={<CustomChartTooltip currencyCode={selectedCurrency} isCount />} />
-                                                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                                                            content={<CustomChartTooltip currencyCode={selectedCurrency} isCount />}
+                                                            cursor={{ fill: '#f4f6f8' }} />
+                                                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} iconType="circle" />
                                                         <Bar dataKey="new" name="New"
-                                                            fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} />
+                                                            fill={CHART_COLORS.primary} radius={[4, 4, 0, 0]} maxBarSize={16} />
                                                         <Bar dataKey="repeat" name="Repeat"
-                                                            fill={CHART_COLORS.secondary} radius={[4, 4, 0, 0]} />
+                                                            fill={CHART_COLORS.secondary} radius={[4, 4, 0, 0]} maxBarSize={16} />
                                                     </BarChart>
                                                 </ResponsiveContainer>
                                             )
@@ -986,7 +995,7 @@ export default function Analytics() {
                                             <ResponsiveContainer width="100%" height={280}>
                                                 <BarChart data={rewardsByProgram}
                                                     margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
-                                                    barCategoryGap="30%">
+                                                    barCategoryGap="25%">
                                                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" vertical={false} />
                                                     <XAxis dataKey="name"
                                                         tick={{ fontSize: 12, fill: "#202223" }}
@@ -996,8 +1005,9 @@ export default function Analytics() {
                                                         tickLine={false} axisLine={false}
                                                         tickFormatter={(v) => `${currencySymbols[selectedCurrency] || ""}${v}`} />
                                                     <RechartsTooltip
-                                                        content={<CustomChartTooltip currencyCode={selectedCurrency} />} />
-                                                    <Bar dataKey="value" name="Rewards" radius={[4, 4, 0, 0]}>
+                                                        content={<CustomChartTooltip currencyCode={selectedCurrency} />}
+                                                        cursor={{ fill: '#f4f6f8' }} />
+                                                    <Bar dataKey="value" name="Rewards" radius={[4, 4, 0, 0]} maxBarSize={32}>
                                                         {rewardsByProgram.map((_, idx) => (
                                                             <Cell key={`cell-${idx}`}
                                                                 fill={PROGRAM_COLORS[idx % PROGRAM_COLORS.length]} />
