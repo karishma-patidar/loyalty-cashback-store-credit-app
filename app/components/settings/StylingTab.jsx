@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { StylingForm } from "../styling/StylingForm.jsx";
-import { PreviewSection } from "../styling/PreviewSection.jsx";
+import { PreviewSection, calculateDisplayAmount } from "../styling/PreviewSection.jsx";
 
 export default function StylingTab({ loaderData }) {
   const shopify = useAppBridge();
@@ -12,7 +12,13 @@ export default function StylingTab({ loaderData }) {
   const [textColor, setTextColor] = useState(loaderData?.textColor || "#000000");
   const [creditIcon, setCreditIcon] = useState(loaderData?.creditIcon || "icon2");
   const [hideWatermark, setHideWatermark] = useState(loaderData?.hideWatermark || false);
-  const [previewPage, setPreviewPage] = useState("product");
+  const activeProgram = loaderData?.activeProgram || null;
+  const [previewPage, setPreviewPage] = useState(
+    activeProgram?.programType === "order" ? "cart" : "product"
+  );
+  
+  const displayAmount = activeProgram ? calculateDisplayAmount(activeProgram) : "3.75";
+  const eligibility = activeProgram?.eligibility || { d2c: true, b2b: false };
   const [customIconSrc, setCustomIconSrc] = useState(
     loaderData?.creditIcon !== "icon1" &&
     loaderData?.creditIcon !== "icon2" &&
@@ -136,12 +142,14 @@ export default function StylingTab({ loaderData }) {
           <PreviewSection
             previewPage={previewPage}
             setPreviewPage={setPreviewPage}
-            eligibility={{ d2c: true, b2b: false }}
-            displayAmount="3.75"
+            eligibility={eligibility}
+            displayAmount={displayAmount}
             bgColor={bgColor}
             textColor={textColor}
             creditIcon={creditIcon === "custom" && customIconSrc ? customIconSrc : creditIcon}
             hideWatermark={hideWatermark}
+            msgProduct={activeProgram?.msgProduct}
+            msgCart={activeProgram?.msgCart}
           />
         </s-box>
       </s-grid>

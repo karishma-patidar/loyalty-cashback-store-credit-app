@@ -10,7 +10,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getShopPrograms, setShopPrograms, getShopStyling } from "../services/graphql.server";
-import { PreviewSection } from "../components/styling/PreviewSection.jsx";
+import { PreviewSection, calculateDisplayAmount } from "../components/styling/PreviewSection.jsx";
 import { ProgramScheduling } from "../components/program/ProgramScheduling.jsx";
 import { PromotionSettings } from "../components/program/PromotionSettings.jsx";
 import { AdvancedSettings } from "../components/program/AdvancedSettings.jsx";
@@ -311,15 +311,7 @@ export default function NewProgram() {
     }
   }, [enableEndDate, endDate, endTime, currentStatus]);
 
-  const calculatedAmount = ((parseFloat(amount) || 0) / 100) * 25.0;
-  const maxCap = parseFloat(maxAmount);
-  const displayAmount =
-    amountType === "Fixed amount"
-      ? (parseFloat(amount) || 0).toFixed(2)
-      : (!isNaN(maxCap) && calculatedAmount > maxCap
-        ? maxCap
-        : calculatedAmount
-      ).toFixed(2);
+  const displayAmount = calculateDisplayAmount(amount, amountType, maxAmount);
 
   const handleSave = useCallback(() => {
     setIsSubmitting(true);
@@ -655,6 +647,8 @@ export default function NewProgram() {
                 textColor={textColor}
                 creditIcon={creditIcon}
                 hideWatermark={hideWatermark}
+                msgProduct={msgProduct}
+                msgCart={msgCart}
               />
 
               {/* Static Save Button directly below Preview card */}

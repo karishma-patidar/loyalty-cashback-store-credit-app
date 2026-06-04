@@ -27,6 +27,27 @@ const ICONS = {
   )
 };
 
+export function calculateDisplayAmount(programOrAmount, amountType, maxAmount) {
+  let amount = programOrAmount;
+  let type = amountType;
+  let max = maxAmount;
+
+  if (programOrAmount && typeof programOrAmount === "object") {
+    amount = programOrAmount.amount;
+    type = programOrAmount.amountType;
+    max = programOrAmount.maxAmount;
+  }
+
+  const calculatedAmount = ((parseFloat(amount) || 0) / 100) * 25.0;
+  const maxCap = parseFloat(max);
+  return type === "Fixed amount"
+    ? (parseFloat(amount) || 0).toFixed(2)
+    : (!isNaN(maxCap) && calculatedAmount > maxCap
+      ? maxCap
+      : calculatedAmount
+    ).toFixed(2);
+}
+
 export function PreviewSection({
   previewPage = "product",
   setPreviewPage,
@@ -36,6 +57,8 @@ export function PreviewSection({
   textColor = "#000000",
   creditIcon = "icon2",
   hideWatermark = false,
+  msgProduct = "",
+  msgCart = "",
 }) {
 
   const renderBannerIcon = () => {
@@ -138,9 +161,13 @@ export function PreviewSection({
                 >
                   {renderBannerIcon()}
                   <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1 }}>
-                    <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", lineHeight: "1.4", color: "inherit" }}>
-                      You will get <strong style={{ fontWeight: "800", color: "inherit" }}>Rs. {displayAmount}</strong> store credit after this purchase.
-                    </p>
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: (msgCart || "You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.")
+                          .replace(/\{loyalty_credit_amount\}/g, `Rs. ${displayAmount}`)
+                      }}
+                      style={{ margin: 0, fontSize: "13px", fontWeight: "600", lineHeight: "1.4", color: "inherit" }}
+                    />
                     {!hideWatermark && (
                       <p style={{ margin: "2px 0 0", fontSize: "10px", opacity: 0.7, lineHeight: "1", color: "inherit" }}>
                         Powered by <span style={{ textDecoration: "underline" }}>Getloyalty.io</span>
@@ -205,9 +232,13 @@ export function PreviewSection({
                 >
                   {renderBannerIcon()}
                   <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1 }}>
-                    <p style={{ margin: 0, fontSize: "13px", fontWeight: "600", lineHeight: "1.4", color: "inherit" }}>
-                      Receive <strong style={{ fontWeight: "800", color: "inherit" }}>Rs. {displayAmount}</strong> store credit when purchasing each item.
-                    </p>
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: (msgProduct || "Receive <strong>{loyalty_credit_amount}</strong> store credit when purchasing each item.")
+                          .replace(/\{loyalty_credit_amount\}/g, `Rs. ${displayAmount}`)
+                      }}
+                      style={{ margin: 0, fontSize: "13px", fontWeight: "600", lineHeight: "1.4", color: "inherit" }}
+                    />
                     {!hideWatermark && (
                       <p style={{ margin: "2px 0 0", fontSize: "10px", opacity: 0.7, lineHeight: "1", color: "inherit" }}>
                         Powered by <span style={{ textDecoration: "underline" }}>Getloyalty.io</span>

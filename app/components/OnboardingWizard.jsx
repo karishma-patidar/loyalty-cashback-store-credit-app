@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { ProgramForm } from "./ProgramForm";
-import { PreviewSection } from "./styling/PreviewSection.jsx";
+import { PreviewSection, calculateDisplayAmount } from "./styling/PreviewSection.jsx";
 import { StylingForm } from "./styling/StylingForm.jsx";
 
 // --- Progress Bar Component ---
@@ -227,15 +227,7 @@ function StepOne() {
 }
 
 function StepTwo(props) {
-  const calculatedAmount = ((parseFloat(props.amount) || 0) / 100) * 25.0;
-  const maxCap = parseFloat(props.maxAmount);
-  const displayAmount =
-    props.amountType === "Fixed amount"
-      ? (parseFloat(props.amount) || 0).toFixed(2)
-      : (!isNaN(maxCap) && calculatedAmount > maxCap
-        ? maxCap
-        : calculatedAmount
-      ).toFixed(2);
+  const displayAmount = calculateDisplayAmount(props.amount, props.amountType, props.maxAmount);
 
   return (
     <div style={{ textAlign: "center", boxSizing: "border-box", width: "100%" }}>
@@ -266,6 +258,8 @@ function StepTwo(props) {
             textColor={props.textColor}
             creditIcon={props.creditIcon}
             hideWatermark={props.hideWatermark}
+            msgProduct={props.msgProduct}
+            msgCart={props.msgCart}
           />
         </div>
       </div>
@@ -274,6 +268,8 @@ function StepTwo(props) {
 }
 
 function StepThree(props) {
+  const displayAmount = calculateDisplayAmount(props.amount, props.amountType, props.maxAmount);
+
   return (
     <div style={{ textAlign: "center", boxSizing: "border-box", width: "100%" }}>
       {/* Centered Header & Title */}
@@ -309,11 +305,13 @@ function StepThree(props) {
             previewPage={props.previewPage}
             setPreviewPage={props.setPreviewPage}
             eligibility={{ d2c: true, b2b: false }}
-            displayAmount="3.75"
+            displayAmount={displayAmount}
             bgColor={props.bgColor}
             textColor={props.textColor}
             creditIcon={props.creditIcon === "custom" && props.customIconSrc ? props.customIconSrc : props.creditIcon}
             hideWatermark={props.hideWatermark}
+            msgProduct={props.msgProduct}
+            msgCart={props.msgCart}
           />
         </div>
       </div>
@@ -926,6 +924,11 @@ export default function OnboardingWizard({
             setHideWatermark={setHideWatermarkState}
             previewPage={previewPage}
             setPreviewPage={setPreviewPage}
+            msgProduct={msgProduct}
+            msgCart={msgCart}
+            amount={amount}
+            amountType={amountType}
+            maxAmount={maxAmount}
           />
         );
       case 4:

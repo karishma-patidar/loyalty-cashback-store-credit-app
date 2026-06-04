@@ -6,6 +6,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import WidgetsTab from "../components/settings/WidgetsTab";
 import StylingTab from "../components/settings/StylingTab";
 import TranslationTab from "../components/settings/TranslationTab";
+import { getShopPrograms } from "../services/graphql.server";
 
 // ─── GraphQL Queries ───────────────────────────────────────────────────────────
 
@@ -65,6 +66,14 @@ export async function loader({ request }) {
 
   const isNewCustomerAccounts = shop?.customerAccountsV2?.customerAccountsVersion === "NEW_CUSTOMER_ACCOUNTS";
 
+  let activeProgram = null;
+  try {
+    const { programs } = await getShopPrograms(admin);
+    activeProgram = programs.find((p) => p.status === "Active") || null;
+  } catch (err) {
+    console.error("Error loading programs in settings loader:", err);
+  }
+
   return {
     shop: session.shop,
     shopId: shop?.id,
@@ -91,6 +100,8 @@ export async function loader({ request }) {
     widget_expired_balance: shop?.widget_expired_balance?.value || "{expired_amount} will be expired soon",
     widget_promotion_msg: shop?.widget_promotion_msg?.value || "You have {balance} store credit. Apply it now!",
     widget_expired_msg: shop?.widget_expired_msg?.value || "{expired_amount} will be expired soon.",
+    // Active program config
+    activeProgram,
   };
 }
 
