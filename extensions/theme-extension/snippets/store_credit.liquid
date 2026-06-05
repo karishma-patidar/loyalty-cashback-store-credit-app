@@ -210,7 +210,7 @@
     data-amount-type="{{ active_program.amountType | default: 'Fixed amount' }}"
     data-max-amount="{{ active_program.maxAmount | default: 0 }}"
     data-msg-product="{{ escaped_msg_prod }}"
-    style="background-color: {{ current_bg }}; padding: 16px; border-radius: 8px; color: {{ current_text }}; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 8px; border: 1px solid {{ current_border }}; font-family: inherit; text-align: left; width: 100%;"
+    style="background-color: {{ current_bg }}; padding: 12px; border-radius: 8px; color: {{ current_text }}; margin: 15px 0; display: {% if is_preview and request.design_mode == false %}none{% else %}flex{% endif %}; align-items: center; gap: 8px; border: 1px solid {{ current_border }}; font-family: inherit; text-align: left; width: 100%;"
   >
     <div
       class="loyalty-icon"
@@ -247,7 +247,7 @@
       {% endif %}
     </div>
     <div>
-      <p class="loyalty-credit-content" style="margin: 0; font-size: 14px; font-weight: 500; line-height: 1.4;">
+      <p class="loyalty-credit-content" style="margin: 0; font-size: 15px; font-weight: 500; line-height: 1.4;">
         {{ final_msg }}
       </p>
       {% if hide_watermark != 'true' and hide_watermark != true and is_thankyou == false %}

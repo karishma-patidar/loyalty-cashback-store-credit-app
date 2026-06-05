@@ -1,0 +1,20 @@
+[[extensions]]
+name = "Issue Store Credit"
+handle = "issue-store-credit"
+type = "flow_action"
+uid = "eb971f31-e471-b10a-f5ee-03a13b9b62d5570858d6"
+description = "Your description"
+runtime_url = "https://prepaid-circle-robin-flour.trycloudflare.com/api/flow-extension"
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  required = true
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "your-field-key"
+  name = "Display name"
+  description = "A description of my field"
+  required = true

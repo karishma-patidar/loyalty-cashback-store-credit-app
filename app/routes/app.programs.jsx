@@ -253,8 +253,8 @@ export default function Programs() {
             <s-grid justifyItems="center" maxInlineSize="450px" gap="base">
               <s-stack alignItems="center" gap="base">
                 <s-heading>Create your first Cashback Program</s-heading>
-                <s-paragraph>
-                  Encourage customers to buy more by rewarding them with store credit on their orders or items. Schedule campaigns, set expiration limits, and scale your brand loyalty effortlessly.
+                <s-paragraph style={{ textAlign: "center", margin: "0 auto" }}>
+                  Boost customer loyalty with store credit rewards on purchases. Launch customized campaigns, manage expiration settings, and increase repeat orders while growing your brand.
                 </s-paragraph>
               </s-stack>
               <s-button-group>

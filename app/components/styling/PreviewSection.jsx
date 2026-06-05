@@ -150,9 +150,9 @@ export function PreviewSection({
                   style={{
                     backgroundColor: bgColor,
                     color: textColor,
-                    padding: "16px",
+                    padding: "12px",
                     borderRadius: "8px",
-                    border: "1px solid rgba(0,0,0,0.08)",
+                    // border: "1px solid rgba(0,0,0,0.08)",
                     display: "flex",
                     alignItems: "center",
                     gap: "12px",
@@ -223,9 +223,9 @@ export function PreviewSection({
                   style={{
                     backgroundColor: bgColor,
                     color: textColor,
-                    padding: "16px",
+                    padding: "12px",
                     borderRadius: "8px",
-                    border: "1px solid rgba(0,0,0,0.08)",
+                    // border: "1px solid rgba(0,0,0,0.08)",
                     display: "flex",
                     alignItems: "center",
                     gap: "12px",
