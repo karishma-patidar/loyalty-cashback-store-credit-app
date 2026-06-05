@@ -551,12 +551,12 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
         <h3 style={{ fontSize: "16px", fontWeight: "700", color: "#111827", margin: "0 0 12px 0" }}>
           How to enable:
         </h3>
-        <ol style={{ margin: 0, paddingLeft: "20px", display: "flex", flexDirection: "column", gap: "10px", color: "#374151", fontSize: "14px", lineHeight: "1.5" }}>
+        <ol style={{ margin: 0, display: "flex", flexDirection: "column", gap: "10px", color: "#374151", fontSize: "14px", lineHeight: "1.5" }}>
           <li>
-            Click the <strong style={{ color: "#111827" }}>"Enable in Theme"</strong> button below
+            1. Click the <strong style={{ color: "#111827" }}>"Enable in Theme"</strong> button below
           </li>
           <li>
-            Click <strong style={{ color: "#111827" }}>Save</strong> in the top right
+            2. Click <strong style={{ color: "#111827" }}>Save</strong> in the top right
           </li>
         </ol>
       </div>
@@ -605,6 +605,9 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
           )}
         </button>
       </div>
+      <p style={{ fontSize: "14px", textAlign: "center", marginTop: "16px" }}>
+        Having trouble? <a href="#" style={{ color: "#2d7ff9", textDecoration: "underline" }}>contact support</a>
+      </p>
     </div>
   );
 }
@@ -1061,7 +1064,7 @@ export default function OnboardingWizard({
           {/* Shared Navigation Buttons container */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", boxSizing: "border-box", marginTop: "15px" }}>
             <div>
-              {currentStep > 1 && (
+              {currentStep > 1 && currentStep < TOTAL_STEPS && (
                 <button
                   style={buttonBackStyle}
                   onMouseEnter={() => setHoveredBack(true)}
