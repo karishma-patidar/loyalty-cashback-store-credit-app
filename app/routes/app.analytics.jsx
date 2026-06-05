@@ -847,7 +847,7 @@ export default function Analytics() {
                                         value={metrics.totalDistributedCustomers} loading={isFetching} />
                                 </s-grid>
                                 <s-divider />
-                                <s-stack direction="block" gap="base">
+                                <s-stack direction="block" gap="none">
                                     <s-heading variant="headingXs" className="w-full block" >Top customers redeem credits</s-heading>
                                     {isFetching ? <SkeletonLines lines={3} /> :
                                         topCustomers.length === 0
@@ -914,8 +914,8 @@ export default function Analytics() {
                                                         margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                                                         <defs>
                                                             <linearGradient id="colorAmount" x1="0" y1="0" x2="0" y2="1">
-                                                                <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3}/>
-                                                                <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0}/>
+                                                                <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.3} />
+                                                                <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0} />
                                                             </linearGradient>
                                                         </defs>
                                                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f2f4" vertical={false} />

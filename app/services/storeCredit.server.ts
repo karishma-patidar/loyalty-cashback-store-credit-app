@@ -51,6 +51,10 @@ export interface ShopifyOrderPayload {
   payment_gateway_names?: string[];
   total_discounts?: string;
   presentment_currency?: string;
+  fulfillment_status?: string;
+  financial_status?: string;
+  note?: string;
+  email?: string;
 }
 
 /**
