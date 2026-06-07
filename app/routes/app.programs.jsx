@@ -266,7 +266,7 @@ export default function Programs() {
                 </s-button>
                 <s-button
                   slot="primary-action"
-                  onClick={() => navigate("/app/programs_new")}
+                  onClick={() => navigate("/app/choose-template")}
                 >
                   Create program
                 </s-button>
@@ -296,7 +296,7 @@ export default function Programs() {
               </s-button>
               <s-button
                 variant="primary"
-                onClick={() => navigate("/app/programs_new")}
+                onClick={() => navigate("/app/choose-template")}
                 className="bg-black text-white shadow-sm"
               >
                 Create program
