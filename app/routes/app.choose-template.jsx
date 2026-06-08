@@ -96,8 +96,8 @@ export default function AutomationIndex() {
     const navigate = useNavigate();
 
     const cashbackTemplate = templates.find((t) => t.id === "every_order_reward");
-    const allTemplates = templates.find((t) => t.id === "every_order_reward") 
-        ? templates.filter((t) => t.id !== "every_order_reward") 
+    const allTemplates = templates.find((t) => t.id === "every_order_reward")
+        ? templates.filter((t) => t.id !== "every_order_reward")
         : templates;
 
     const [selectedTab, setSelectedTab] = React.useState("All");
@@ -128,7 +128,7 @@ export default function AutomationIndex() {
                 title="Programs"
                 backAction={{
                     content: "",
-                    onAction: () => navigate(-1),
+                    onAction: () => navigate("/app/programs"),
                 }}
             >
                 <Layout>

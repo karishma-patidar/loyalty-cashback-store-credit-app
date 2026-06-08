@@ -20,6 +20,7 @@ import {
   useSetIndexFiltersMode,
   IndexFiltersMode,
 } from "@shopify/polaris";
+import AdminModel from "../hooks/AdminModel";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -129,6 +130,7 @@ export default function Programs() {
         if (fetcher.data.actionType === "delete") {
           setPrograms((prev) => prev.filter((p) => p.id !== fetcher.data.id));
           shopify.toast.show("Program deleted");
+          setProgramToDelete(null);
         } else if (fetcher.data.actionType === "toggleStatus") {
           shopify.toast.show(`Program ${fetcher.data.status}`);
         }
@@ -136,6 +138,9 @@ export default function Programs() {
         shopify.toast.show(fetcher.data.error || "Action failed", {
           isError: true,
         });
+        if (fetcher.data.actionType === "delete") {
+          setProgramToDelete(null);
+        }
         if (fetcher.data.actionType === "toggleStatus" && fetcher.data.id) {
           setPrograms((prev) =>
             prev.map((p) => {
@@ -162,6 +167,7 @@ export default function Programs() {
   const [activeTab, setActiveTab] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const { mode, setMode } = useSetIndexFiltersMode();
+  const [programToDelete, setProgramToDelete] = useState(null);
 
   const handleFiltersCancel = useCallback(() => {
     setMode(IndexFiltersMode.Default);
@@ -210,16 +216,19 @@ export default function Programs() {
 
   const deleteProgram = useCallback(
     (id) => {
-      if (!confirm("Are you sure you want to delete this program?")) return;
-
-      fetcher.submit(
-        { actionType: "delete", id },
-        { method: "POST", encType: "application/json" },
-      );
+      setProgramToDelete(id);
     },
-    [fetcher],
+    [],
   );
 
+  const confirmDelete = useCallback(() => {
+    if (programToDelete) {
+      fetcher.submit(
+        { actionType: "delete", id: programToDelete },
+        { method: "POST", encType: "application/json" },
+      );
+    }
+  }, [fetcher, programToDelete]);
   const toggleStatus = useCallback(
     (id) => {
       const prog = programs.find((p) => p.id === id);
@@ -393,9 +402,25 @@ export default function Programs() {
                           </s-text>
                         </s-table-cell>
                         <s-table-cell className="py-4">
-                          <s-text color="subdued" className="text-[12px]">
-                            {prog.programId || `PROG-${prog.id.slice(-3)}`}
-                          </s-text>
+                          <s-stack direction="inline" gap="tight" alignment="center">
+                            <s-text color="subdued" className="text-[12px]">
+                              {(() => {
+                                const displayId = prog.programId || `PROG-${prog.id.slice(-3)}`;
+                                return displayId.length > 10 ? displayId.slice(0, 10) + "..." : displayId;
+                              })()}
+                            </s-text>
+                            <s-tooltip id={`copy-tooltip-${prog.id}`}>Copy Program Id</s-tooltip>
+                            <s-button
+                              interestFor={`copy-tooltip-${prog.id}`}
+                              variant="tertiary"
+                              icon="clipboard"
+                              onClick={() => {
+                                navigator.clipboard.writeText(prog.programId || `PROG-${prog.id.slice(-3)}`);
+                                shopify.toast.show("Program ID copied");
+                              }}
+
+                            />
+                          </s-stack>
                         </s-table-cell>
                         <s-table-cell className="py-4 text-right">
                           <s-text color="subdued" className="text-[12px]">
@@ -445,8 +470,12 @@ export default function Programs() {
                               variant="tertiary"
                               icon="edit"
                               onClick={() => {
-                                console.log("Navigating to edit:", prog.id);
-                                navigate(`/app/programs_new?id=${prog.id}`);
+                                console.log("Navigating to edit:", prog.id, "Type:", prog.programType);
+                                if (prog.programType === "custom") {
+                                  navigate(`/app/flow-temapate?programId=${prog.id}`);
+                                } else {
+                                  navigate(`/app/programs_new?id=${prog.id}`);
+                                }
                               }}
                               className="p-1"
                             />
@@ -469,6 +498,23 @@ export default function Programs() {
           </s-box>
         </s-stack>
       </s-section>
+
+      <AdminModel
+        loading={fetcher.state !== "idle"}
+        modalOpen={!!programToDelete}
+        setModalOpen={(open) => {
+          if (!open) setProgramToDelete(null);
+        }}
+        title="Delete Flow Program"
+        buttonLabel="Delete program"
+        tone="critical"
+        handleSave={confirmDelete}
+        modelContent={
+          <s-text>
+            This action cannot be undone. Please confirm that you want to delete this program permanently.
+          </s-text>
+        }
+      />
     </s-page>
   );
 }

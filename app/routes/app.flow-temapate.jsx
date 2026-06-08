@@ -22,8 +22,11 @@ import {
     Toast,
 } from "@shopify/polaris";
 import { ClipboardIcon, QuestionCircleIcon } from "@shopify/polaris-icons";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useNavigate, useSearchParams, useLoaderData, useSubmit, useActionData, redirect, useFetcher } from "react-router";
+import { authenticate } from "../shopify.server";
+import { getShopPrograms, setShopPrograms } from "../services/graphql.server";
 import { v4 as uuidv4 } from "uuid";
 import AdminModel from "../hooks/AdminModel";
 import { PostApi } from "../controller/Controller";
@@ -32,6 +35,63 @@ import pkg from 'lodash';
 const { isEqual } = pkg;
 import UniversalSaveBar from "../controller/UniversalSaveBar"
 
+// =============================================================================
+// REMIX LOADER & ACTION
+// =============================================================================
+export const loader = async ({ request }) => {
+    const { admin, session } = await authenticate.admin(request);
+
+    // Fetch shop currency
+    const query = `
+      query {
+        shop {
+          currencyCode
+        }
+      }
+    `;
+    const response = await admin.graphql(query);
+    const data = await response.json();
+    const currencyCode = data?.data?.shop?.currencyCode || "USD";
+
+    // Fetch existing programs
+    const { shopId, programs } = await getShopPrograms(admin);
+
+    return Response.json({
+        shopId,
+        currencyCode,
+        programs,
+        shopName: session.shop,
+    });
+};
+
+export const action = async ({ request }) => {
+    const { admin, session } = await authenticate.admin(request);
+    const payload = await request.json();
+
+    const { shopId, programs } = await getShopPrograms(admin);
+
+    // Ensure the program type is explicitly custom
+    const programData = {
+        ...payload,
+        programType: "custom",
+        id: payload.programId // use programId as id to keep consistency in metafield array
+    };
+
+    const existingIndex = programs.findIndex(p => p.programId === programData.programId || p.id === programData.programId);
+
+    if (existingIndex >= 0) {
+        programs[existingIndex] = programData;
+    } else {
+        programs.push(programData);
+    }
+
+    try {
+        await setShopPrograms(admin, shopId, programs);
+        return Response.json({ success: true });
+    } catch (error) {
+        return Response.json({ success: false, error: error.message }, { status: 500 });
+    }
+};
 // =============================================================================
 // TEMPLATE FACTORY
 // Single source of truth for all reward templates.
@@ -47,7 +107,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Create Account Reward",
+                programName: "Create Account Reward",
                 programType: "fixed",
                 amount: "10",
                 currencyCode: currencyCode,
@@ -65,7 +125,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - Signup.flow",
-                description: "Earn {amount_currency} store credit on successful signup.",
+                description: "Earn {loyalty_credit_amount} store credit on successful signup.",
                 notify: false,
             },
         },
@@ -76,7 +136,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "First Order Reward",
+                programName: "First Order Reward",
                 programType: "percentage",
                 amount: "15",
                 currencyCode: currencyCode,
@@ -94,7 +154,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - First_Order_Reward.flow",
-                description: "Earn {amount_currency} store credit on successful order.",
+                description: "Earn {loyalty_credit_amount} store credit on successful order.",
                 notify: false,
             },
         },
@@ -105,7 +165,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Second Order Reward",
+                programName: "Second Order Reward",
                 programType: "fixed",
                 amount: "20",
                 currencyCode: currencyCode,
@@ -123,7 +183,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - Second_Order_Reward.flow",
-                description: "Earn {amount_currency} store credit on successful order.",
+                description: "Earn {loyalty_credit_amount} store credit on successful order.",
                 notify: false,
             },
         },
@@ -134,7 +194,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Order Reward",
+                programName: "Order Reward",
                 programType: "fixed",
                 amount: "10",
                 currencyCode: currencyCode,
@@ -152,7 +212,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - Order Rewards.flow",
-                description: "Earn {amount_currency} store credit on every successful order.",
+                description: "Earn {loyalty_credit_amount} store credit on every successful order.",
                 notify: false,
             },
         },
@@ -163,7 +223,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Newsletter Subscribe Reward",
+                programName: "Newsletter Subscribe Reward",
                 programType: "fixed",
                 amount: "10",
                 currencyCode: currencyCode,
@@ -181,7 +241,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - Email Subscriber Reward.flow",
-                description: "Earn {amount_currency} store credit when you subscribe to the newsletter.",
+                description: "Earn {loyalty_credit_amount} store credit when you subscribe to the newsletter.",
                 notify: false,
             },
         },
@@ -192,7 +252,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Birthday Reward",
+                programName: "Birthday Reward",
                 programType: "fixed",
                 amount: "10",
                 currencyCode: currencyCode,
@@ -210,7 +270,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - Birthday Reward.flow",
-                description: "Earn {amount_currency} store credit on your birthday.",
+                description: "Earn {loyalty_credit_amount} store credit on your birthday.",
                 notify: false,
             },
         },
@@ -221,7 +281,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Order amount reward",
+                programName: "Order amount reward",
                 programType: "fixed",
                 amount: "10",
                 currencyCode: currencyCode,
@@ -239,7 +299,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty - Order amount reward.flow",
-                description: "Earn {amount_currency} in store credit on every successful order above 100.",
+                description: "Earn {loyalty_credit_amount} in store credit on every successful order above 100.",
                 notify: false,
             },
         },
@@ -250,7 +310,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Specific product reward",
+                programName: "Specific product reward",
                 programType: "fixed",
                 amount: "12",
                 currencyCode: currencyCode,
@@ -268,7 +328,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty-include-specific-product-reward.flow",
-                description: "Earn {amount_currency} in store credit on purchase specific product.",
+                description: "Earn {loyalty_credit_amount} in store credit on purchase specific product.",
                 notify: false,
                 infoBannerDescription: "This template is to issue store credit based on total order value when a specific product is included.",
             },
@@ -281,7 +341,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 allowedProgramTypes: ["fixed", "percentage"],
                 status: false,
                 programId: uuidv4(),
-                internalName: "Specific collection reward",
+                programName: "Specific collection reward",
                 programType: "fixed",
                 amount: "15",
                 currencyCode: currencyCode,
@@ -299,7 +359,7 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
                 endsAtDate: endsAtDateFormatted,
                 endsAtTime: currentTime,
                 downloadTemplate: "/Loyalty-include-collection-reward.flow",
-                description: "Earn {amount_currency} in store credit on purchase from specific collection.",
+                description: "Earn {loyalty_credit_amount} in store credit on purchase from specific collection.",
                 notify: false,
                 infoBannerDescription: "This template is to issue store credit based on total order value when a specific product is included.",
             },
@@ -310,10 +370,13 @@ function buildTemplates(currencyCode, { currentDate, currentTime, endsAtDateForm
 // =============================================================================
 // COMPONENT
 // =============================================================================
-function TemplateId(props) {
-    const { setReturnMessage, flowProgramsList, setFlowProgramsList, currencyCode } = props;
-
-    console.log("flowProgramsList::", flowProgramsList);
+function TemplateId() {
+    const shopify = useAppBridge();
+    const loaderData = useLoaderData();
+    const currencyCode = loaderData?.currencyCode || "USD";
+    const shopName = loaderData?.shopName || "";
+    const programs = loaderData?.programs || [];
+    const fetcher = useFetcher();
 
     // -------------------------------------------------------------------------
     // Date / time helpers — computed once on mount
@@ -334,6 +397,7 @@ function TemplateId(props) {
     // -------------------------------------------------------------------------
     const [searchParams] = useSearchParams();
     const paramsId = searchParams.get("id"); // templateId from URL
+    const programId = searchParams.get("programId"); // existing program UUID to edit
     const navigate = useNavigate();
 
     // -------------------------------------------------------------------------
@@ -348,10 +412,8 @@ function TemplateId(props) {
     const [modelHeading, setModelHeading] = useState("Apply a campaign template");
     const [hoveredMenu, setHoveredMenu] = useState(null);
 
-
     // -------------------------------------------------------------------------
     // Templates — derived from currencyCode (single source of truth)
-    // Re-built whenever currencyCode changes.
     // -------------------------------------------------------------------------
     const templates = useMemo(
         () => buildTemplates(currencyCode, dateTimeCtx),
@@ -366,18 +428,41 @@ function TemplateId(props) {
         [templates, paramsId]
     );
 
+    const existingProgram = useMemo(
+        () => {
+            if (!programId) return null;
+            return programs.find((p) => p.programId === programId || p.id === programId);
+        },
+        [programId, programs]
+    );
+
     // -------------------------------------------------------------------------
     // Settings state — synced whenever selectedTemplate changes
     // -------------------------------------------------------------------------
-    const [settings, setSettings] = useState(() => selectedTemplate?.settings);
-    const [defaultSettings, setDefaultSettings] = useState(selectedTemplate?.settings);
+    const [settings, setSettings] = useState(() => existingProgram || selectedTemplate?.settings);
+    const [defaultSettings, setDefaultSettings] = useState(existingProgram || selectedTemplate?.settings);
 
     useEffect(() => {
-        if (selectedTemplate) {
+        if (existingProgram) {
+            setSettings(existingProgram);
+            setDefaultSettings(existingProgram);
+        } else if (selectedTemplate) {
             setSettings(selectedTemplate.settings);
-            // setDefaultSettings(selectedTemplate.settings);
+            setDefaultSettings(selectedTemplate.settings);
         }
-    }, [selectedTemplate]);
+    }, [selectedTemplate, existingProgram]);
+
+    // Handle 2-second delay for saving
+    useEffect(() => {
+        if (fetcher.data?.success && fetcher.state === "idle") {
+            const timer = setTimeout(() => {
+                setLoading(false);
+                setDefaultSettings(settings); // This hides the save bar instantly
+                navigate("/app/programs?toast=saved", { replace: true });
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [fetcher.data, fetcher.state, navigate, settings]);
 
     // -------------------------------------------------------------------------
     // Static config
@@ -386,7 +471,6 @@ function TemplateId(props) {
         { title: "Full setup guide", menu_key: "full_setup_guide" },
         { title: "Workflow settings", menu_key: "program_settings" },
         { title: "Connect to shopify flow", menu_key: "connect_shopify_flow" },
-        // { title: "Publish workflow", menu_key: "publish_program" },
     ];
 
     const programOptions = [
@@ -396,17 +480,15 @@ function TemplateId(props) {
 
     // -------------------------------------------------------------------------
     // formatDescription
-    // Replaces {amount_currency} placeholder at render time.
-    // Description is stored as plain text; this function is only used for display.
     // -------------------------------------------------------------------------
     const formatDescription = (description, amount, currencyCode, programType) => {
         if (!description) return "";
-        if (!description.includes("{amount_currency}")) return description;
+        if (!description.includes("{loyalty_credit_amount}")) return description;
         const replacement =
             programType === "percentage"
                 ? `${amount}%`
                 : formatCurrency(amount, currencyCode);
-        return description.replace(/\{amount_currency\}/g, replacement);
+        return description.replace(/\{loyalty_credit_amount\}/g, replacement);
     };
 
     // -------------------------------------------------------------------------
@@ -414,12 +496,7 @@ function TemplateId(props) {
     // -------------------------------------------------------------------------
     const handleCopy = () => {
         navigator.clipboard.writeText(settings?.programId);
-        setReturnMessage(
-            <Toast
-                content="Workflow id copied"
-                onDismiss={() => setReturnMessage(false)}
-            />
-        );
+        shopify.toast.show("Workflow id copied");
     };
 
     const handleToggle = useCallback((id) => {
@@ -442,17 +519,9 @@ function TemplateId(props) {
         window.open(`https://admin.shopify.com/store/${shopName}/email_templates/store_credit_issued/preview`, "_blank");
     }
 
-    const handleSaveData = async (key, value) => {
+    const handleSaveData = async () => {
         setLoading(true);
-        const updatedSettings = { ...settings, [key]: value }; // prepare new state
-        const updatedPrograms = [...flowProgramsList, updatedSettings];
-        await PostApi("/api/flow-programs-list", updatedPrograms); // send latest data
-        await PostApi("/api/set-flow-action", updatedPrograms);
-        setSettings(updatedSettings); // update state
-        setFlowProgramsList(updatedPrograms);
-        setDefaultSettings(updatedSettings); // update default settings to match saved state
-        setLoading(false);
-        navigate("/dashboard-plus/automation/manage", { replace: true });
+        fetcher.submit(settings, { method: "POST", encType: "application/json" });
     };
 
     const handleOpenEditor = (id, heading) => {
@@ -648,16 +717,24 @@ function TemplateId(props) {
         </InlineStack>
     );
 
-    const hasChanges = !isEqual(settings, defaultSettings);
+    const [isDiscarding, setIsDiscarding] = useState(false);
+    const hasChanges = !isEqual(settings, defaultSettings) && !isDiscarding;
 
     const handleCancelSaveData = () => {
+        setIsDiscarding(true);
         setSettings(defaultSettings);
-        navigate("/app/choose-template", { replace: true });
+
+        // Wait for React to render open={false} and App Bridge to hide the bar
+        setTimeout(() => {
+            navigate("/app/programs");
+        }, 500);
     };
 
     useEffect(() => {
-        handleChange("status", true)
-    }, []);
+        if (!settings?.status) {
+            handleChange("status", "Active");
+        }
+    }, [settings?.status]);
 
     // =========================================================================
     // RENDER
@@ -675,14 +752,22 @@ function TemplateId(props) {
                         }
                     },
                 }}
-                title={settings?.internalName}
+                title={settings?.programName}
                 titleMetadata={
-                    settings?.status === true && (
+                    settings?.status === "Active" ? (
                         <Badge progress="complete" tone="success">
                             Active
                         </Badge>
+                    ) : (
+                        <Badge progress="incomplete" tone="info">
+                            Paused
+                        </Badge>
                     )
                 }
+                primaryAction={{
+                    content: settings?.status === "Active" ? "Deactivate" : "Activate",
+                    onAction: () => handleChange("status", settings?.status === "Active" ? "Paused" : "Active"),
+                }}
             >
                 {/* ---------------- Universal Save Bar ---------------------*/}
                 <UniversalSaveBar
@@ -864,8 +949,8 @@ function TemplateId(props) {
                                             </Text>
                                             <TextField
                                                 label=""
-                                                value={settings?.internalName}
-                                                onChange={(val) => handleChange("internalName", val)}
+                                                value={settings?.programName}
+                                                onChange={(val) => handleChange("programName", val)}
                                             // helpText="Your customers will see this."
                                             />
                                             <Text variant="bodySm" tone="subdued">
@@ -915,7 +1000,7 @@ function TemplateId(props) {
                                             // helpText={
                                             //   <>
                                             //     Manually editable. Use{" "}
-                                            //     <strong>{`{amount_currency}`}</strong>{" "}
+                                            //     <strong>{`{loyalty_credit_amount}`}</strong>{" "}
                                             //     as a placeholder — it will be replaced dynamically
                                             //     with the formatted reward value.
                                             //   </>

@@ -90,7 +90,11 @@ export default function WidgetsTab({ loaderData }) {
   const shopify = useAppBridge();
 
   const getWidgetStatus = (widget) => {
-    if (widget.id === "checkout-widget" || widget.id === "notification-banner") {
+    if (widget.id === "checkout-widget") {
+      return themeAppExtensionExists.cashbackOffer;
+    }
+    if (widget.id === "notification-banner") {
+      if (themeAppExtensionExists.hasCashbackNotificationUI) return "active";
       return themeAppExtensionExists.cashbackOffer;
     }
 
@@ -127,7 +131,8 @@ export default function WidgetsTab({ loaderData }) {
   const handleSetup = (widget) => {
     const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
     if (widget.id === "notification-banner") {
-      const editorUrl = `https://${cleanShop}/admin/settings/checkout/editor/profiles/3122331696?exitPath=%2Fadmin%2Fthemes%2F141941571632%2Feditor&page=order-status&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/cashback_notification`;
+      const editorUrl = `https://${cleanShop}/admin/settings/checkout/editor?page=order-status&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/cashback_notification`;
+
       window.open(editorUrl, "_blank", "noopener,noreferrer");
       shopify.toast.show("Opening Checkout Customization Editor...");
       return;
