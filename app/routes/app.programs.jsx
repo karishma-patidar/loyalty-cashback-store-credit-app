@@ -34,21 +34,36 @@ export const loader = async ({ request }) => {
     const ShopModel = getShopModel(session.shop);
     const docs = ShopModel ? await ShopModel.find({}) : [];
 
+    // Identify the "first" program of each category to absorb old legacy events
+    const firstCashbackProg = programs.find(p => p.programType !== "custom" && !p.isFlowProgram);
+    const firstCustomProg = programs.find(p => p.programType === "custom" || p.isFlowProgram);
+
     // Process each program to assign its dynamic issued amount
     for (const prog of programs) {
       let totalIssued = 0;
-      const isCustom = prog.programType === "custom";
+      const progId = prog.programId || prog.id;
 
       for (const doc of docs) {
         if (doc.events && Array.isArray(doc.events)) {
           for (const ev of doc.events) {
             if (ev.status === "Completed") {
               if (ev.currency) currency = ev.currency;
-              const evIsCustom = ev.programType === "Custom Program";
-              if (isCustom && evIsCustom) {
-                totalIssued += Number(ev.issuedAmount || 0);
-              } else if (!isCustom && !evIsCustom) {
-                totalIssued += Number(ev.issuedAmount || 0);
+
+              if (ev.programId) {
+                // Precise matching for new events
+                if (ev.programId === progId) {
+                  totalIssued += Number(ev.issuedAmount || 0);
+                }
+              } else {
+                // Fallback for old events that lack a programId
+                const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom";
+                const isProgCustom = prog.programType === "custom" || prog.isFlowProgram;
+
+                if (isProgCustom && evIsCustom && prog.id === firstCustomProg?.id) {
+                  totalIssued += Number(ev.issuedAmount || 0);
+                } else if (!isProgCustom && !evIsCustom && prog.id === firstCashbackProg?.id) {
+                  totalIssued += Number(ev.issuedAmount || 0);
+                }
               }
             }
           }
@@ -193,9 +208,9 @@ export default function Programs() {
     if (activeTab === "Active")
       return matchesSearch && prog.status === "Active";
     if (activeTab === "Cashback")
-      return matchesSearch && prog.programType !== "custom";
+      return matchesSearch && prog.programType !== "custom" && !prog.isFlowProgram;
     if (activeTab === "Custom Program")
-      return matchesSearch && prog.programType === "custom";
+      return matchesSearch && (prog.programType === "custom" || prog.isFlowProgram);
 
     return matchesSearch;
   });
@@ -470,8 +485,8 @@ export default function Programs() {
                               variant="tertiary"
                               icon="edit"
                               onClick={() => {
-                                console.log("Navigating to edit:", prog.id, "Type:", prog.programType);
-                                if (prog.programType === "custom") {
+                                console.log("Navigating to edit:", prog.id, "Type:", prog.programType, "isFlow:", prog.isFlowProgram);
+                                if (prog.programType === "custom" || prog.isFlowProgram) {
                                   navigate(`/app/flow-temapate?programId=${prog.id}`);
                                 } else {
                                   navigate(`/app/programs_new?id=${prog.id}`);
@@ -511,7 +526,7 @@ export default function Programs() {
         handleSave={confirmDelete}
         modelContent={
           <s-text>
-            This action cannot be undone. Please confirm that you want to delete this program permanently.
+            Are you sure you want to permanently delete this program? This action cannot be undone.
           </s-text>
         }
       />

@@ -40,6 +40,8 @@ interface OrderEvent {
   processAt?: Date;
   expiresAt?: string | null;
   shouldNotify?: boolean;
+  programId?: string;
+  programName?: string;
 }
 
 // ─── Shopify Helpers ──────────────────────────────────────────────────────────
@@ -243,6 +245,8 @@ async function handleOrderCreate(
     issuedAmount: cashbackAmount, currency: currencyCode,
     status: 'Pending', emailStatus: 'Not Sent',
     programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
+    programId: program.programId || program.id,
+    programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: null, createdAt: new Date(),
   };
 
@@ -310,6 +314,8 @@ async function handleOrderFulfilled(
       issuedAmount: cashbackAmount, currency: currencyCode, exchangeRate,
       status: 'Pending', emailStatus: 'Not Sent', emailFailReason: '',
       programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
+      programId: program.programId || program.id,
+      programName: program.programName || program.internalName || program.name,
       redeemedAmount, issuedAt: null, processAt, expiresAt, shouldNotify,
       createdAt: existingTx?.createdAt ?? new Date(),
     };
@@ -343,6 +349,8 @@ async function handleOrderFulfilled(
       ? finalEmailFailReason
       : storeCreditResult?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed',
     programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
+    programId: program.programId || program.id,
+    programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: new Date(), createdAt: existingTx?.createdAt ?? new Date(),
   };
 

@@ -70,10 +70,10 @@ export const action = async ({ request }) => {
 
     const { shopId, programs } = await getShopPrograms(admin);
 
-    // Ensure the program type is explicitly custom
+    // Keep the actual programType (fixed/percentage) but flag it as a flow program
     const programData = {
         ...payload,
-        programType: "custom",
+        isFlowProgram: true,
         id: payload.programId // use programId as id to keep consistency in metafield array
     };
 
@@ -374,7 +374,7 @@ function TemplateId() {
     const shopify = useAppBridge();
     const loaderData = useLoaderData();
     const currencyCode = loaderData?.currencyCode || "USD";
-    const shopName = loaderData?.shopName || "";
+    const shopName = (loaderData?.shopName || "").replace(".myshopify.com", "");
     const programs = loaderData?.programs || [];
     const fetcher = useFetcher();
 

@@ -3,6 +3,8 @@
  * Location: app/services/graphql.server.js
  */
 
+import { connectLoyaltyDB, getFlowProgramModel } from "../db.mongodb.server.js";
+
 /**
  * Fetch the Shop ID and the list of loyalty/cashback programs from Shopify metafields.
  * @param {object} admin - Authenticated Shopify Admin client
@@ -102,6 +104,38 @@ export async function setShopPrograms(admin, shopId, programs) {
   const userErrors = data?.data?.metafieldsSet?.userErrors;
   if (userErrors && userErrors.length > 0) {
     throw new Error(userErrors[0].message);
+  }
+
+  // ==== SYNC TO MONGODB ====
+  try {
+    // 1. Fetch shop domain for MongoDB
+    const shopQuery = `
+      query {
+        shop {
+          myshopifyDomain
+        }
+      }
+    `;
+    const shopRes = await admin.graphql(shopQuery);
+    const shopData = await shopRes.json();
+    const shopDomain = shopData?.data?.shop?.myshopifyDomain;
+
+    if (shopDomain) {
+      await connectLoyaltyDB();
+      const FlowProgramModel = getFlowProgramModel();
+      if (FlowProgramModel) {
+        // Consolidate all programs into a single session document
+        await FlowProgramModel.findOneAndUpdate(
+          { shop: shopDomain },
+          { $set: { shop: shopDomain, programs: programs } },
+          { upsert: true, new: true }
+        );
+
+        console.log(`[MongoDB Sync] Synchronized ${programs.length} programs into a single session document for ${shopDomain}`);
+      }
+    }
+  } catch (syncError) {
+    console.error("[MongoDB Sync Error] Failed to sync programs to MongoDB:", syncError);
   }
 
   return { success: true };

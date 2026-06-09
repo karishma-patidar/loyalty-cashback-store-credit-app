@@ -3,6 +3,7 @@ import { Box } from "@shopify/polaris";
 
 function AdminModel(props) {
     const { modalOpen, setModalOpen, title, buttonLabel, modelContent, loading, handleSave, tone, size, padding = "300" } = props;
+    console.log(modalOpen, "modalOpen")
     return (
         <>
             <Modal

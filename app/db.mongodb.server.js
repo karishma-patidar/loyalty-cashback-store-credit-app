@@ -114,6 +114,22 @@ export async function updateAppSettings(shop, updates) {
   );
 }
 
+// Schema to store programs mirrored from Shopify Metafields within a single session document
+const flowProgramSchema = new mongoose.Schema({
+  shop: { type: String, required: true, unique: true },
+  programs: { type: Array, default: [] }
+}, { strict: false, timestamps: true });
+
+export function getFlowProgramModel() {
+  // Uses the global loyalty db connection since it's shared app data
+  const conn = global.__mongooseLoyaltyConnection?.conn;
+  if (!conn) {
+    console.warn("MongoDB Loyalty Connection not initialized when getting FlowProgramModel.");
+    return null;
+  }
+  return conn.models.FlowProgram || conn.model("FlowProgram", flowProgramSchema, "flow_programs");
+}
+
 // Dynamic model retrieval/compilation per shop (collection name corresponds to the shop's domain)
 export function getShopModel(shop) {
   if (!shop) return null;
