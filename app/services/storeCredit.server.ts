@@ -30,6 +30,10 @@ export interface ProgramSettings {
   eligibility?: { d2c: boolean; b2b: boolean };
   cashbackPercentage?: number;
   notifyEmail?: boolean;
+  programId?: string;
+  programName?: string;
+  internalName?: string;
+  isFlowProgram?: boolean;
 }
 
 export interface ShopifyOrderPayload {
@@ -47,6 +51,7 @@ export interface ShopifyOrderPayload {
     first_name?: string;
     last_name?: string;
     email?: string;
+    orders_count?: number | string;
   };
   payment_gateway_names?: string[];
   total_discounts?: string;
@@ -240,7 +245,8 @@ export function calculateCashbackAmount(program: ProgramSettings, orderPayload: 
 
     if (
       program.amountType === "Percentage" ||
-      program.cashbackPercentage !== undefined
+      program.cashbackPercentage !== undefined ||
+      program.programType === "percentage"
     ) {
       const pct = parseFloat(program.amount || String(program.cashbackPercentage || 0));
       cashbackAmount = (orderTotal * pct) / 100;

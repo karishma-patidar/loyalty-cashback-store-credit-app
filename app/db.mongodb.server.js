@@ -78,6 +78,8 @@ const eventSchema = new mongoose.Schema({
   processAt: Date,
   expiresAt: Date,
   shouldNotify: Boolean,
+  programId: String,
+  programName: String,
   createdAt: { type: Date, default: Date.now }
 });
 

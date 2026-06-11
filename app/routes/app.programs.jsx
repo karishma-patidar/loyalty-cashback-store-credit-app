@@ -22,6 +22,24 @@ import {
 } from "@shopify/polaris";
 import AdminModel from "../hooks/AdminModel";
 
+const currencySymbols = {
+  INR: "₹",
+  USD: "$",
+  CAD: "C$",
+  AUD: "A$",
+  GBP: "£",
+  EUR: "€",
+  JPY: "¥",
+};
+
+function formatCurrency(amount, currencyCode) {
+  const symbol = currencySymbols[currencyCode] || currencyCode || "$";
+  return `${symbol}${Number(amount || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const { shopId, programs } = await getShopPrograms(admin);
@@ -56,7 +74,7 @@ export const loader = async ({ request }) => {
                 }
               } else {
                 // Fallback for old events that lack a programId
-                const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom";
+                const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
                 const isProgCustom = prog.programType === "custom" || prog.isFlowProgram;
 
                 if (isProgCustom && evIsCustom && prog.id === firstCustomProg?.id) {
@@ -70,7 +88,7 @@ export const loader = async ({ request }) => {
         }
       }
 
-      prog.issued = totalIssued.toFixed(2);
+      prog.issued = formatCurrency(totalIssued, currency);
     }
   } catch (err) {
     console.error("❌ Error calculating program issued amounts:", err);

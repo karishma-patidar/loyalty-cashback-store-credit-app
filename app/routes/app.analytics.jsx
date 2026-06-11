@@ -20,6 +20,7 @@ import {
 import { authenticate } from "../shopify.server";
 import connectMongoDB, { getShopModel, migrateShopData } from "../db.mongodb.server";
 import { getStoreCreditTransactions } from "../services/storeCredit.server";
+import { getShopPrograms } from "../services/graphql.server";
 import { MetricCell, SkeletonLine } from "../components/MetricCell";
 
 const getenabledPresentmentCurrencies = async () => {
@@ -231,6 +232,13 @@ export const loader = async ({ request }) => {
     await new Promise((resolve) => setTimeout(resolve, 850));
 
     const { start, end } = calculateDateRange(preset, customStart, customEnd);
+    let programs = [];
+    try {
+        const progRes = await getShopPrograms(admin);
+        programs = progRes.programs || [];
+    } catch (e) {
+        console.error("Error fetching shop programs in analytics loader:", e);
+    }
 
     // ── Shop configuration fetching
     let shopCurrency = "INR";
@@ -274,6 +282,23 @@ export const loader = async ({ request }) => {
                 for (const ev of doc.events) {
                     if (!ev.orderId) continue;
                     const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(doc.createdAt);
+                    let programName = ev.programName;
+                    if (!programName && programs.length > 0) {
+                        if (ev.programId) {
+                            const p = programs.find(p => p.id === ev.programId || p.programId === ev.programId);
+                            if (p) programName = p.name || p.programName;
+                        } else {
+                            const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
+                            const firstCashbackProg = programs.find(p => p.programType !== "custom" && !p.isFlowProgram);
+                            const firstCustomProg = programs.find(p => p.programType === "custom" || p.isFlowProgram);
+                            if (evIsCustom && firstCustomProg) {
+                                programName = firstCustomProg.name || firstCustomProg.programName;
+                            } else if (!evIsCustom && firstCashbackProg) {
+                                programName = firstCashbackProg.name || firstCashbackProg.programName;
+                            }
+                        }
+                    }
+
                     const eventObj = {
                         orderId: ev.orderId,
                         orderName: ev.orderName,
@@ -283,6 +308,7 @@ export const loader = async ({ request }) => {
                         redeemedAmount: Number(ev.redeemedAmount || 0),
                         currency: ev.currency,
                         status: ev.status,
+                        name: programName || (ev.programType === "Cashback" ? "Cashback" : ev.programType) || "Cashback",
                         type: ev.programType || "Cashback",
                         createdAt: eventDate,
                     };
@@ -384,7 +410,7 @@ export const loader = async ({ request }) => {
     // ── Top Programs
     const programsMap = {};
     for (const ev of completedEvents) {
-        const k = ev.type || "Cashback";
+        const k = ev.name || "Cashback";
         programsMap[k] = (programsMap[k] || 0) + ev.amount;
     }
     const topPrograms = Object.entries(programsMap)

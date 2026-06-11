@@ -165,16 +165,29 @@ async function upsertOrderEvent(
   newEvent: OrderEvent,
   existingDocId?: string,
 ): Promise<void> {
+  const programId = newEvent.programId;
+
   if (existingDocId) {
+    const updateResult = await ShopModel.updateOne(
+      { _id: existingDocId, 'events.orderId': orderId, 'events.programId': programId },
+      { $set: { 'events.$[elem]': newEvent } },
+      { arrayFilters: [{ 'elem.orderId': orderId, 'elem.programId': programId }] }
+    );
+    
+    if (updateResult.matchedCount > 0 || updateResult.modifiedCount > 0) {
+      return;
+    }
+
+    // Event wasn't found in the array, push it
     await ShopModel.updateOne(
-      { _id: existingDocId, 'events.orderId': orderId },
-      { $set: { 'events.$': newEvent } },
+      { _id: existingDocId },
+      { $push: { events: newEvent } }
     );
     return;
   }
 
   const updateResult = await ShopModel.updateOne(
-    { date: dateStr, 'events.orderId': { $ne: orderId } },
+    { date: dateStr, 'events': { $not: { $elemMatch: { orderId: orderId, programId: programId } } } },
     { $push: { events: newEvent } },
   );
 
@@ -200,8 +213,10 @@ async function handleOrderCreate(
     customerId, customerName, orderId, orderName, orderGid,
     cashbackAmount, currencyCode } = ctx;
 
+  const programId = program.programId || program.id;
+
   if (existingTx) {
-    return console.log(`[-] Order ${orderName} already in DB. Skipping duplicate.`);
+    return console.log(`[-] Order ${orderName} already in DB for program ${programId}. Skipping duplicate.`);
   }
 
   const gateways: string[] = orderPayload.payment_gateway_names ?? [];
@@ -210,7 +225,7 @@ async function handleOrderCreate(
   );
 
   if (cashbackAmount <= 0 && !hasStoreCreditGateway) {
-    return console.log(`[-] Cashback 0 and no store credit used. Skipping.`);
+    return console.log(`[-] Cashback 0 and no store credit used for program ${programId}. Skipping.`);
   }
 
   let redeemedAmount = 0;
@@ -245,7 +260,7 @@ async function handleOrderCreate(
     issuedAmount: cashbackAmount, currency: currencyCode,
     status: 'Pending', emailStatus: 'Not Sent',
     programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
-    programId: program.programId || program.id,
+    programId: programId,
     programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: null, createdAt: new Date(),
   };
@@ -254,7 +269,7 @@ async function handleOrderCreate(
   await updateOrderShopifyData(
     adminClient, orderId, buildOrderMetafields(orderGid, cashbackAmount, currencyCode, newEvent, 'Pending'),
   );
-  console.log(`🎉 Order ${orderName} saved as PENDING in MongoDB.`);
+  console.log(`🎉 Order ${orderName} saved as PENDING in MongoDB for program ${programId}.`);
 }
 
 async function handleOrderFulfilled(
@@ -266,8 +281,10 @@ async function handleOrderFulfilled(
     customerId, customerName, orderId, orderName, orderGid,
     cashbackAmount, currencyCode } = ctx;
 
+  const programId = program.programId || program.id;
+
   if (existingTx?.status === 'Completed') {
-    return console.log(`[-] Order ${orderName} already Completed. Skipping.`);
+    return console.log(`[-] Order ${orderName} already Completed for program ${programId}. Skipping.`);
   }
 
   if (orderPayload.fulfillment_status !== 'fulfilled') {
@@ -314,14 +331,14 @@ async function handleOrderFulfilled(
       issuedAmount: cashbackAmount, currency: currencyCode, exchangeRate,
       status: 'Pending', emailStatus: 'Not Sent', emailFailReason: '',
       programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
-      programId: program.programId || program.id,
+      programId: programId,
       programName: program.programName || program.internalName || program.name,
       redeemedAmount, issuedAt: null, processAt, expiresAt, shouldNotify,
       createdAt: existingTx?.createdAt ?? new Date(),
     };
 
     await upsertOrderEvent(ShopModel, todayStr, orderId, delayEvent, existingDocId);
-    console.log(`🎉 Scheduled order ${orderName} for delay (${delayDays} days).`);
+    console.log(`🎉 Scheduled order ${orderName} for delay (${delayDays} days) for program ${programId}.`);
     return;
   }
 
@@ -349,7 +366,7 @@ async function handleOrderFulfilled(
       ? finalEmailFailReason
       : storeCreditResult?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed',
     programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
-    programId: program.programId || program.id,
+    programId: programId,
     programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: new Date(), createdAt: existingTx?.createdAt ?? new Date(),
   };
@@ -357,16 +374,16 @@ async function handleOrderFulfilled(
   await upsertOrderEvent(ShopModel, todayStr, orderId, eventToSave, existingDocId);
 
   if (isSuccessful) {
-    const appNote = `[Loyalty App] Issued ${cashbackAmount} ${currencyCode} store credit.`;
+    const appNote = `[Loyalty App] Issued ${cashbackAmount} ${currencyCode} store credit from program ${program.programName || program.name}.`;
     const updatedNote = appendNoteIfMissing(orderPayload.note ?? '', appNote);
     await updateOrderShopifyData(
       adminClient, orderId,
       buildOrderMetafields(orderGid, cashbackAmount, currencyCode, eventToSave, 'Completed'),
       updatedNote,
     );
-    console.log(`🎉 Updated order ${orderName} to COMPLETED.`);
+    console.log(`🎉 Updated order ${orderName} to COMPLETED for program ${programId}.`);
   } else {
-    console.log(`❌ Store credit issue failed for ${orderName}: ${eventToSave.emailFailReason}`);
+    console.log(`❌ Store credit issue failed for ${orderName} (Program ${programId}): ${eventToSave.emailFailReason}`);
   }
 }
 
@@ -458,13 +475,13 @@ export async function processOrderWebhook(
     console.error('Error fetching app_active status:', err);
   }
 
-  // Fetch loyalty program
+  // Fetch all active loyalty programs
   const programs = await getShopPrograms(adminClient);
-  const program = programs?.[0];
-  const isActive =
-    program?.status === 'Active' || program?.status === 'true' || program?.status === true;
+  const activePrograms = programs?.filter((p: any) => 
+    (p.status === 'Active' || p.status === 'true' || p.status === true)
+  ) || [];
 
-  if (!programs?.length || !isActive) {
+  if (!activePrograms.length) {
     return console.log('[-] Aborted: No Active loyalty programs configured.');
   }
 
@@ -480,9 +497,6 @@ export async function processOrderWebhook(
 
   const todayStr = new Date().toISOString().split('T')[0];
   const existingDoc = await ShopModel.findOne({ 'events.orderId': orderId });
-  const existingTx: OrderEvent | undefined = existingDoc?.events?.find(
-    (e: any) => e.orderId === orderId,
-  );
 
   const customerName =
     `${orderPayload?.customer?.first_name ?? ''} ${orderPayload?.customer?.last_name ?? ''}`.trim() || 'Anonymous Customer';
@@ -496,18 +510,43 @@ export async function processOrderWebhook(
       quantity: item.quantity,
     })) ?? [],
   };
-  const cashbackAmount = existingTx?.issuedAmount ?? calculateCashbackAmount(program, mappedOrder);
 
-  const ctx: WebhookContext = {
-    adminClient, orderPayload, shop, program, ShopModel, todayStr,
-    customerId, customerName, orderId, orderName, orderGid,
-    cashbackAmount, currencyCode,
-  };
+  const customerOrdersCount = parseInt(String(orderPayload?.customer?.orders_count || "0"), 10);
 
-  if (topic === 'ORDERS_CREATE') {
-    await handleOrderCreate(ctx, existingTx);
-  } else if (topic === 'ORDERS_FULFILLED') {
-    await handleOrderFulfilled(ctx, existingTx, existingDoc?._id);
+  // Loop through all active programs and process rewards for each one
+  for (const program of activePrograms) {
+    const programId = program.programId || program.id;
+    const programName = program.name || program.programName || "Unknown Program";
+    
+    // Skip native execution for Flow programs, as they are triggered by Shopify Flow Extension
+    if (program.isFlowProgram) {
+        console.log(`[-] Skipping native execution of Flow Program '${programName}'. It will be handled by Shopify Flow.`);
+        continue;
+    }
+
+    console.log(`[+] Evaluating program: ${programName} (${programId})`);
+
+    const existingTx: OrderEvent | undefined = existingDoc?.events?.find(
+      (e: any) => e.orderId === orderId && e.programId === programId,
+    );
+
+    const cashbackAmount = existingTx?.issuedAmount ?? calculateCashbackAmount(program, mappedOrder);
+
+    const ctx: WebhookContext = {
+      adminClient, orderPayload, shop, program, ShopModel, todayStr,
+      customerId, customerName, orderId, orderName, orderGid,
+      cashbackAmount, currencyCode,
+    };
+
+    try {
+      if (topic === 'ORDERS_CREATE') {
+        await handleOrderCreate(ctx, existingTx);
+      } else if (topic === 'ORDERS_FULFILLED') {
+        await handleOrderFulfilled(ctx, existingTx, existingDoc?._id);
+      }
+    } catch (err) {
+      console.error(`❌ Error processing program ${programName} (${programId}) natively:`, err);
+    }
   }
 }
 
@@ -534,15 +573,16 @@ export async function processDelayedCredits(
     if (!programs?.length) {
       return console.log('[-] Aborted delayed processing: No programs.');
     }
-    const program = programs[0];
 
     for (const doc of docs) {
       for (const ev of doc.events) {
         const isReady = ev.status === 'Pending' && ev.processAt && ev.processAt <= now;
         if (!isReady) continue;
 
-        console.log(`[+] Processing delayed credit for Order ${ev.orderName}`);
+        console.log(`[+] Processing delayed credit for Order ${ev.orderName} (Program ${ev.programId})`);
 
+        const program = programs.find((p: any) => (p.programId === ev.programId || p.id === ev.programId)) || programs[0];
+        
         const expiresAt = ev.expiresAt?.toISOString() ?? calculateExpirationDate(program);
         const shouldNotify = ev.shouldNotify ?? !!program.notifyEmail;
 
@@ -560,11 +600,12 @@ export async function processDelayedCredits(
           ev.issuedAt = new Date();
 
           await ShopModel.updateOne(
-            { _id: doc._id, 'events.orderId': ev.orderId },
-            { $set: { 'events.$': ev } },
+            { _id: doc._id },
+            { $set: { 'events.$[elem]': ev } },
+            { arrayFilters: [{ 'elem.orderId': ev.orderId, 'elem.programId': ev.programId }] }
           );
 
-          const appNote = `[Loyalty App] Issued ${ev.issuedAmount} ${ev.currency ?? 'USD'} store credit (Delayed).`;
+          const appNote = `[Loyalty App] Issued ${ev.issuedAmount} ${ev.currency ?? 'USD'} store credit (Delayed, Program ${ev.programName}).`;
           const orderGid = toGid('Order', ev.orderId);
 
           const noteRes = await adminClient.graphql(`#graphql
@@ -586,8 +627,9 @@ export async function processDelayedCredits(
           ev.emailFailReason = res?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed';
 
           await ShopModel.updateOne(
-            { _id: doc._id, 'events.orderId': ev.orderId },
-            { $set: { 'events.$': ev } },
+            { _id: doc._id },
+            { $set: { 'events.$[elem]': ev } },
+            { arrayFilters: [{ 'elem.orderId': ev.orderId, 'elem.programId': ev.programId }] }
           );
           console.log(`❌ [Delayed] Failed for ${ev.orderName}: ${ev.emailFailReason}`);
         }
