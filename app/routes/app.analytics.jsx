@@ -783,6 +783,7 @@ export default function Analytics() {
                                             dateTo={dateTo}
                                             onDateChange={handleDateChange}
                                             onClose={closeDatePopover}
+                                            popoverId="date-actions"
                                         />
                                     </s-box>
                                 </s-popover>
@@ -867,10 +868,10 @@ export default function Analytics() {
                         <s-section padding="base" background="surface" borderWidth="base" borderRadius="base">
                             <s-stack direction="block" gap="base">
                                 <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base" className="w-full">
-                                    <MetricCell id="redeem" label="Total customers redeem credit" tooltip={TOOLTIPS.totalCustomersRedeem}
-                                        value={metrics.totalCustomersRedeem} loading={isFetching} />
                                     <MetricCell id="distributed" label="Total distributed customers" tooltip={TOOLTIPS.totalDistributedCustomers}
                                         value={metrics.totalDistributedCustomers} loading={isFetching} />
+                                    <MetricCell id="redeem" label="Total customers redeem credit" tooltip={TOOLTIPS.totalCustomersRedeem}
+                                        value={metrics.totalCustomersRedeem} loading={isFetching} />
                                 </s-grid>
                                 <s-divider />
                                 <s-stack direction="block" gap="none">

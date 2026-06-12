@@ -320,7 +320,12 @@ async function shopifyOrderApi(orderId, storeName, accessToken) {
         }
 
         const result = await response.json();
-        return result.data.order.totalPriceSet.presentmentMoney;
+        const order = result?.data?.order;
+        return {
+            amount: order?.totalPriceSet?.presentmentMoney?.amount || 0,
+            currencyCode: order?.totalPriceSet?.presentmentMoney?.currencyCode || order?.currencyCode || null,
+            name: order?.name || '',
+        };
     } catch (error) {
         console.error("Shopify GraphQL request error:", error);
         throw error;
@@ -470,6 +475,7 @@ async function processProgram({
     order_amount = 0,
     order_currency = null,
     order_id = null,
+    order_name = null,
 }) {
     console.log("=== [Flow Actions] processProgram ===");
     console.log("Shopify Domain:", shopify_domain);
@@ -542,6 +548,7 @@ async function processProgram({
             currencyCode: finalCurrencyCode,
             triggerType,
             order_amount,
+            order_name,
             ...(order_id?.includes("/Order/") && {
                 order_id: order_id.split("/").pop(),
             }),
@@ -566,6 +573,7 @@ async function handleOrderTrigger({
 
     let order_amount = 0;
     let order_currency = null;
+    let order_name = null;
 
     if (order_id) {
         try {
@@ -576,6 +584,7 @@ async function handleOrderTrigger({
             );
             order_amount = parseFloat(orderDetails?.amount || 0);
             order_currency = orderDetails?.currencyCode || null;
+            order_name = orderDetails?.name || null;
         } catch (err) {
             console.error("❌ Failed to fetch order details:", err);
             return { success: false, message: "Failed to fetch order details" };
@@ -591,6 +600,7 @@ async function handleOrderTrigger({
         order_amount,
         order_currency,
         order_id,
+        order_name,
     });
 }
 
@@ -839,7 +849,7 @@ export async function setCreditCustomerStoreCreditApi(data) {
             const eventToSave = {
                 shop: storeName,
                 orderId: orderId,
-                orderName: reward?.order_id ? `Order ${orderId}` : "Flow Action",
+                orderName: reward?.order_name ? reward.order_name : (reward?.order_id ? `#${orderId}` : "Flow Action"),
                 customerId: `gid://shopify/Customer/${customerId}`,
                 customerName: customerName,
                 issuedAmount: parseFloat(reward?.rewardAmount || 0),

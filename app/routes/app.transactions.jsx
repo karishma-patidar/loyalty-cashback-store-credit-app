@@ -65,17 +65,22 @@ export async function loader({ request }) {
   // Connect to MongoDB
   await connectMongoDB();
 
+  // Load programs
+  let programs = [];
+  try {
+    const { getShopPrograms } = await import("../services/storeCredit.server");
+    programs = (await getShopPrograms(admin)) || [];
+  } catch (err) {
+    console.error("Error fetching programs in transactions loader:", err);
+  }
+
   const allTransactions = [];
 
   try {
     const ShopModel = getShopModel(shop);
     if (ShopModel) {
       await migrateShopData(shop);
-      await ShopModel.updateMany(
-        { "events.programType": "Custom Program" },
-        { $set: { "events.$[elem].programType": "Cashback" } },
-        { arrayFilters: [{ "elem.programType": "Custom Program" }] }
-      );
+      // Removed Custom Program to Cashback migration to support Custom Program tab
     }
     const docs = ShopModel ? await ShopModel.find({}) : [];
 
@@ -86,11 +91,20 @@ export async function loader({ request }) {
           // Skip events with no orderId (corrupted data)
           if (!ev.orderId) continue;
 
+          // Determine if custom program transaction
+          let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
+          if (ev.programId && programs.length > 0) {
+            const matchedProg = programs.find(p => p.programId === ev.programId || p.id === ev.programId);
+            if (matchedProg) {
+              isCustom = matchedProg.programType === "custom" || matchedProg.isFlowProgram === true;
+            }
+          }
+
           // Filter by tab type
           if (activeTabId === "1") {
-            if ((ev.programType || ev.type) !== "Custom Program") continue;
+            if (!isCustom) continue;
           } else {
-            if ((ev.programType || ev.type) === "Custom Program") continue;
+            if (isCustom) continue;
           }
 
           allTransactions.push({
@@ -148,15 +162,9 @@ export async function loader({ request }) {
   const uniqueTransactions = Array.from(uniqueTransactionsMap.values());
 
   let enableDelay = false;
-  try {
-    const { getShopPrograms } = await import("../services/storeCredit.server");
-    const programs = await getShopPrograms(admin);
-    if (programs && programs.length > 0) {
-      const prog = programs[0];
-      enableDelay = prog.enableDelay === true || prog.enableDelay === "true";
-    }
-  } catch (err) {
-    console.error("Error fetching programs in transactions loader:", err);
+  if (programs && programs.length > 0) {
+    const prog = programs[0];
+    enableDelay = prog.enableDelay === true || prog.enableDelay === "true";
   }
 
   return {
@@ -170,7 +178,7 @@ export async function loader({ request }) {
 
 // Action to generate high performance CSV download file from MongoDB customer collections
 export async function action({ request }) {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
 
   const formData = await request.formData();
@@ -185,9 +193,16 @@ export async function action({ request }) {
     const filterStatus = filterStatusStr ? filterStatusStr.split(",") : [];
 
     // Connect to MongoDB
-
-    // Connect to MongoDB
     await connectMongoDB();
+
+    // Load programs
+    let programs = [];
+    try {
+      const { getShopPrograms } = await import("../services/storeCredit.server");
+      programs = (await getShopPrograms(admin)) || [];
+    } catch (err) {
+      console.error("Error fetching programs in transactions action:", err);
+    }
 
     const allTransactions = [];
 
@@ -198,11 +213,20 @@ export async function action({ request }) {
       for (const doc of docs) {
         if (doc.events && Array.isArray(doc.events)) {
           for (const ev of doc.events) {
+            // Determine if custom program transaction
+            let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
+            if (ev.programId && programs.length > 0) {
+              const matchedProg = programs.find(p => p.programId === ev.programId || p.id === ev.programId);
+              if (matchedProg) {
+                isCustom = matchedProg.programType === "custom" || matchedProg.isFlowProgram === true;
+              }
+            }
+
             // 1. Program Type Filter
             if (tab === "1") {
-              if ((ev.programType || ev.type) !== "Custom Program") continue;
+              if (!isCustom) continue;
             } else {
-              if ((ev.programType || ev.type) === "Custom Program") continue;
+              if (isCustom) continue;
             }
 
             // 2. Search Query Filter
@@ -499,7 +523,7 @@ export default function Transactions() {
 
   const tabs = [
     { id: "0", content: "Cashback Program", index: 0 },
-    // { id: "1", content: "Custom Program", index: 1 },
+    { id: "1", content: "Custom Program", index: 1 },
   ];
 
   const handleTabChange = useCallback(

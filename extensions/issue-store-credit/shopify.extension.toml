@@ -4,7 +4,7 @@ handle = "issue-store-credit"
 type = "flow_action"
 uid = "eb971f31-e471-b10a-f5ee-03a13b9b62d5570858d6"
 description = "Your description"
-runtime_url = "https://west-plymouth-picked-variations.trycloudflare.com/api/flow_triggers"
+runtime_url = "https://appointed-ash-henry-powers.trycloudflare.com/api/flow_triggers"
 
 [settings]
 

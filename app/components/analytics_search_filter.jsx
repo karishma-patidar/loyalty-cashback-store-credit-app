@@ -87,7 +87,7 @@ const formatDisplayRange = (fromStr, toStr) => {
     }
 };
 
-export default function DateFilter({ dateFrom, dateTo, onDateChange, onClose }) {
+export default function DateFilter({ dateFrom, dateTo, onDateChange, onClose, popoverId = "date-actions" }) {
     const [activePreset, setActivePreset] = useState(() => detectPreset(dateFrom, dateTo));
     const [tempDateFrom, setTempDateFrom] = useState(dateFrom);
     const [tempDateTo, setTempDateTo] = useState(dateTo);
@@ -253,10 +253,20 @@ export default function DateFilter({ dateFrom, dateTo, onDateChange, onClose }) 
                     <s-divider />
                     <s-stack direction="inline" gap="small" alignment="space-between" items="center">
                         <s-stack direction="inline" gap="small">
-                            <s-button variant="secondary" onClick={onClose}>
+                            <s-button
+                                variant="secondary"
+                                commandFor={popoverId}
+                                command="--hide"
+                                onClick={onClose}
+                            >
                                 Cancel
                             </s-button>
-                            <s-button variant="primary" onClick={handleApply}>
+                            <s-button
+                                variant="primary"
+                                commandFor={popoverId}
+                                command="--hide"
+                                onClick={handleApply}
+                            >
                                 Apply
                             </s-button>
                         </s-stack>
@@ -271,5 +281,6 @@ DateFilter.propTypes = {
     dateFrom: PropTypes.string.isRequired,
     dateTo: PropTypes.string.isRequired,
     onDateChange: PropTypes.func.isRequired,
-    onClose: PropTypes.func
+    onClose: PropTypes.func,
+    popoverId: PropTypes.string
 };

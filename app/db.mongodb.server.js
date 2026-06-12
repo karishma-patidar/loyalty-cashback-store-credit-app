@@ -74,12 +74,12 @@ const eventSchema = new mongoose.Schema({
   emailFailReason: String,
   redeemedAmount: Number,
   programType: String,
-  issuedAt: Date,
   processAt: Date,
   expiresAt: Date,
   shouldNotify: Boolean,
   programId: String,
   programName: String,
+  issuedAt: Date,
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -172,12 +172,12 @@ export async function migrateShopData(shop) {
       }
     }
 
-    // Now run the "Custom Program" to "Cashback" migration on programType
-    await ShopModel.updateMany(
-      { "events.programType": "Custom Program" },
-      { $set: { "events.$[elem].programType": "Cashback" } },
-      { arrayFilters: [{ "elem.programType": "Custom Program" }] }
-    );
+    // Now run the "Custom Program" to "Cashback" migration on programType (Commented out to support Custom Program tab)
+    // await ShopModel.updateMany(
+    //   { "events.programType": "Custom Program" },
+    //   { $set: { "events.$[elem].programType": "Cashback" } },
+    //   { arrayFilters: [{ "elem.programType": "Custom Program" }] }
+    // );
   } catch (err) {
     console.error(`[Migration Error] Failed to migrate shop data for ${shop}:`, err);
   }

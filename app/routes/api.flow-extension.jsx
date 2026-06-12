@@ -184,3 +184,7 @@
 //     // Return 200 to indicate success to Shopify Flow
 //     return new Response();
 // };
+
+export const action = async () => {
+    return new Response("OK");
+};
