@@ -34,10 +34,11 @@ const currencySymbols = {
 
 function formatCurrency(amount, currencyCode) {
   const symbol = currencySymbols[currencyCode] || currencyCode || "$";
-  return `${symbol}${Number(amount || 0).toLocaleString("en-US", {
+  const formatted = Number(amount || 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
+  return `${symbol}${formatted} ${currencyCode || "USD"}`;
 }
 
 export const loader = async ({ request }) => {
@@ -46,11 +47,37 @@ export const loader = async ({ request }) => {
 
   // Connect to MongoDB to calculate exact issued store credit per program type
   await connectMongoDB();
-  let currency = "INR";
+
+  let shopCurrency = "USD";
+  try {
+    const shopCurrencyRes = await admin.graphql(`#graphql
+      query GetShopCurrency {
+        shop {
+          currencyCode
+        }
+      }
+    `);
+    const shopCurrencyData = await shopCurrencyRes.json();
+    shopCurrency = shopCurrencyData?.data?.shop?.currencyCode || "USD";
+  } catch (err) {
+    console.error("❌ Error fetching shop currency in programs loader:", err);
+  }
+
   try {
     await migrateShopData(session.shop);
     const ShopModel = getShopModel(session.shop);
     const docs = ShopModel ? await ShopModel.find({}) : [];
+
+    // Determine unique currencies in MongoDB
+    const allEvents = [];
+    for (const doc of docs) {
+      if (doc.events && Array.isArray(doc.events)) {
+        allEvents.push(...doc.events);
+      }
+    }
+    const mongoCurrencies = Array.from(new Set(allEvents.map(e => e.currency))).filter(Boolean);
+    const isSingleCurrency = mongoCurrencies.length <= 1;
+    const activeCurrency = (isSingleCurrency && mongoCurrencies.length === 1) ? mongoCurrencies[0] : shopCurrency;
 
     // Identify the "first" program of each category to absorb old legacy events
     const firstCashbackProg = programs.find(p => p.programType !== "custom" && !p.isFlowProgram);
@@ -65,12 +92,19 @@ export const loader = async ({ request }) => {
         if (doc.events && Array.isArray(doc.events)) {
           for (const ev of doc.events) {
             if (ev.status === "Completed") {
-              if (ev.currency) currency = ev.currency;
+              const evCurrency = ev.currency || shopCurrency;
+
+              // Discard other currencies if MongoDB contains multiple currencies
+              if (!isSingleCurrency && evCurrency !== shopCurrency) {
+                continue;
+              }
+
+              let amountVal = Number(ev.issuedAmount || 0);
 
               if (ev.programId) {
                 // Precise matching for new events
                 if (ev.programId === progId) {
-                  totalIssued += Number(ev.issuedAmount || 0);
+                  totalIssued += amountVal;
                 }
               } else {
                 // Fallback for old events that lack a programId
@@ -78,9 +112,9 @@ export const loader = async ({ request }) => {
                 const isProgCustom = prog.programType === "custom" || prog.isFlowProgram;
 
                 if (isProgCustom && evIsCustom && prog.id === firstCustomProg?.id) {
-                  totalIssued += Number(ev.issuedAmount || 0);
+                  totalIssued += amountVal;
                 } else if (!isProgCustom && !evIsCustom && prog.id === firstCashbackProg?.id) {
-                  totalIssued += Number(ev.issuedAmount || 0);
+                  totalIssued += amountVal;
                 }
               }
             }
@@ -88,7 +122,7 @@ export const loader = async ({ request }) => {
         }
       }
 
-      prog.issued = formatCurrency(totalIssued, currency);
+      prog.issued = formatCurrency(totalIssued, activeCurrency);
     }
   } catch (err) {
     console.error("❌ Error calculating program issued amounts:", err);
@@ -435,25 +469,28 @@ export default function Programs() {
                           </s-text>
                         </s-table-cell>
                         <s-table-cell className="py-4">
-                          <s-stack direction="inline" gap="tight" alignment="center">
-                            <s-text color="subdued" className="text-[12px]">
-                              {(() => {
-                                const displayId = prog.programId || `PROG-${prog.id.slice(-3)}`;
-                                return displayId.length > 10 ? displayId.slice(0, 10) + "..." : displayId;
-                              })()}
-                            </s-text>
-                            <s-tooltip id={`copy-tooltip-${prog.id}`}>Copy Program Id</s-tooltip>
-                            <s-button
-                              interestFor={`copy-tooltip-${prog.id}`}
-                              variant="tertiary"
-                              icon="clipboard"
-                              onClick={() => {
-                                navigator.clipboard.writeText(prog.programId || `PROG-${prog.id.slice(-3)}`);
-                                shopify.toast.show("Program ID copied");
-                              }}
-
-                            />
-                          </s-stack>
+                          {prog.programType === "custom" || prog.isFlowProgram ? (
+                            <s-stack direction="inline" gap="tight" alignment="center">
+                              <s-text color="subdued" className="text-[12px]">
+                                {(() => {
+                                  const displayId = prog.programId || `PROG-${prog.id.slice(-3)}`;
+                                  return displayId.length > 10 ? displayId.slice(0, 10) + "..." : displayId;
+                                })()}
+                              </s-text>
+                              <s-tooltip id={`copy-tooltip-${prog.id}`}>Copy Program Id</s-tooltip>
+                              <s-button
+                                interestFor={`copy-tooltip-${prog.id}`}
+                                variant="tertiary"
+                                icon="clipboard"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(prog.programId || `PROG-${prog.id.slice(-3)}`);
+                                  shopify.toast.show("Program ID copied");
+                                }}
+                              />
+                            </s-stack>
+                          ) : (
+                            <s-text color="subdued" className="text-[12px]"></s-text>
+                          )}
                         </s-table-cell>
                         <s-table-cell className="py-4 text-right">
                           <s-text color="subdued" className="text-[12px]">

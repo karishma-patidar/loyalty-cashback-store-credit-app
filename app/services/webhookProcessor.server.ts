@@ -168,10 +168,21 @@ async function upsertOrderEvent(
   const programId = newEvent.programId;
 
   if (existingDocId) {
+    const query: any = { _id: existingDocId, 'events.orderId': orderId };
+    const arrayFilters: any[] = [{ 'elem.orderId': orderId }];
+
+    if (programId) {
+      query['events.programId'] = programId;
+      arrayFilters[0]['elem.programId'] = programId;
+    } else {
+      query['events.programId'] = { $exists: false };
+      arrayFilters[0]['elem.programId'] = { $exists: false };
+    }
+
     const updateResult = await ShopModel.updateOne(
-      { _id: existingDocId, 'events.orderId': orderId, 'events.programId': programId },
+      query,
       { $set: { 'events.$[elem]': newEvent } },
-      { arrayFilters: [{ 'elem.orderId': orderId, 'elem.programId': programId }] }
+      { arrayFilters }
     );
     
     if (updateResult.matchedCount > 0 || updateResult.modifiedCount > 0) {
@@ -186,8 +197,15 @@ async function upsertOrderEvent(
     return;
   }
 
+  const elemMatchQuery: any = { orderId };
+  if (programId) {
+    elemMatchQuery.programId = programId;
+  } else {
+    elemMatchQuery.programId = { $exists: false };
+  }
+
   const updateResult = await ShopModel.updateOne(
-    { date: dateStr, 'events': { $not: { $elemMatch: { orderId: orderId, programId: programId } } } },
+    { date: dateStr, 'events': { $not: { $elemMatch: elemMatchQuery } } },
     { $push: { events: newEvent } },
   );
 
@@ -255,12 +273,13 @@ async function handleOrderCreate(
     console.error('❌ Error fetching order transactions:', err);
   }
 
+  const isCustom = program.programType === 'custom';
   const newEvent: OrderEvent = {
     shop, orderId, orderName, customerId, customerName,
     issuedAmount: cashbackAmount, currency: currencyCode,
     status: 'Pending', emailStatus: 'Not Sent',
-    programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
-    programId: programId,
+    programType: isCustom ? 'Custom Program' : 'Cashback',
+    ...(isCustom ? { programId } : {}),
     programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: null, createdAt: new Date(),
   };
@@ -326,12 +345,13 @@ async function handleOrderFulfilled(
     const processAt = new Date();
     processAt.setDate(processAt.getDate() + delayDays);
 
+    const isCustom = program.programType === 'custom';
     const delayEvent: OrderEvent = {
       shop, orderId, orderName, customerId, customerName,
       issuedAmount: cashbackAmount, currency: currencyCode, exchangeRate,
       status: 'Pending', emailStatus: 'Not Sent', emailFailReason: '',
-      programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
-      programId: programId,
+      programType: isCustom ? 'Custom Program' : 'Cashback',
+      ...(isCustom ? { programId } : {}),
       programName: program.programName || program.internalName || program.name,
       redeemedAmount, issuedAt: null, processAt, expiresAt, shouldNotify,
       createdAt: existingTx?.createdAt ?? new Date(),
@@ -357,6 +377,7 @@ async function handleOrderFulfilled(
     finalEmailFailReason = 'Shopify API version unsupported for email';
   }
 
+  const isCustom = program.programType === 'custom';
   const eventToSave: OrderEvent = {
     shop, orderId, orderName, customerId, customerName,
     issuedAmount: cashbackAmount, currency: currencyCode, exchangeRate,
@@ -365,8 +386,8 @@ async function handleOrderFulfilled(
     emailFailReason: isSuccessful
       ? finalEmailFailReason
       : storeCreditResult?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed',
-    programType: program.programType === 'custom' ? 'Custom Program' : 'Cashback',
-    programId: programId,
+    programType: isCustom ? 'Custom Program' : 'Cashback',
+    ...(isCustom ? { programId } : {}),
     programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: new Date(), createdAt: existingTx?.createdAt ?? new Date(),
   };
@@ -526,8 +547,9 @@ export async function processOrderWebhook(
 
     console.log(`[+] Evaluating program: ${programName} (${programId})`);
 
+    const isCustom = program.programType === 'custom';
     const existingTx: OrderEvent | undefined = existingDoc?.events?.find(
-      (e: any) => e.orderId === orderId && e.programId === programId,
+      (e: any) => e.orderId === orderId && (isCustom ? e.programId === programId : !e.programId),
     );
 
     const cashbackAmount = existingTx?.issuedAmount ?? calculateCashbackAmount(program, mappedOrder);
@@ -581,7 +603,7 @@ export async function processDelayedCredits(
 
         console.log(`[+] Processing delayed credit for Order ${ev.orderName} (Program ${ev.programId})`);
 
-        const program = programs.find((p: any) => (p.programId === ev.programId || p.id === ev.programId)) || programs[0];
+        const program = programs.find((p: any) => ev.programId ? (p.programId === ev.programId || p.id === ev.programId) : (!p.isFlowProgram && p.programType !== 'custom')) || programs[0];
         
         const expiresAt = ev.expiresAt?.toISOString() ?? calculateExpirationDate(program);
         const shouldNotify = ev.shouldNotify ?? !!program.notifyEmail;
@@ -599,10 +621,17 @@ export async function processDelayedCredits(
           ev.emailFailReason = emailFailed ? 'Unsupported API' : '';
           ev.issuedAt = new Date();
 
+          const arrayFilters: any[] = [{ 'elem.orderId': ev.orderId }];
+          if (ev.programId) {
+            arrayFilters[0]['elem.programId'] = ev.programId;
+          } else {
+            arrayFilters[0]['elem.programId'] = { $exists: false };
+          }
+
           await ShopModel.updateOne(
             { _id: doc._id },
             { $set: { 'events.$[elem]': ev } },
-            { arrayFilters: [{ 'elem.orderId': ev.orderId, 'elem.programId': ev.programId }] }
+            { arrayFilters }
           );
 
           const appNote = `[Loyalty App] Issued ${ev.issuedAmount} ${ev.currency ?? 'USD'} store credit (Delayed, Program ${ev.programName}).`;
@@ -626,10 +655,17 @@ export async function processDelayedCredits(
           ev.emailStatus = 'Failed';
           ev.emailFailReason = res?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed';
 
+          const arrayFilters: any[] = [{ 'elem.orderId': ev.orderId }];
+          if (ev.programId) {
+            arrayFilters[0]['elem.programId'] = ev.programId;
+          } else {
+            arrayFilters[0]['elem.programId'] = { $exists: false };
+          }
+
           await ShopModel.updateOne(
             { _id: doc._id },
             { $set: { 'events.$[elem]': ev } },
-            { arrayFilters: [{ 'elem.orderId': ev.orderId, 'elem.programId': ev.programId }] }
+            { arrayFilters }
           );
           console.log(`❌ [Delayed] Failed for ${ev.orderName}: ${ev.emailFailReason}`);
         }
