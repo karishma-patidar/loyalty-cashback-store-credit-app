@@ -166,11 +166,48 @@
     %}
   {% endif %}
 
+  {% comment %} --- Override message with translation from metafield --- {% endcomment %}
+  {% assign translations = shop.metafields.loyalty_cashback_app.translations.value
+    | default: shop.metafields.loyalty_cashback_app.translations %}
+  {% if translations %}
+    {% assign current_lang = request.locale.iso_code | downcase %}
+    {% assign t_default_locale = translations._defaultLocale | default: 'en' %}
+    {% assign t_locale = translations[current_lang] %}
+    {% assign t_default = translations[t_default_locale] %}
+
+    {% if request.page_type == 'product' %}
+      {% if t_locale.cashback_msg_product != blank %}
+        {% assign raw_msg = t_locale.cashback_msg_product %}
+      {% elsif t_default.cashback_msg_product != blank %}
+        {% assign raw_msg = t_default.cashback_msg_product %}
+      {% endif %}
+    {% elsif is_thankyou %}
+      {% if t_locale.widget_pending_msg != blank %}
+        {% assign raw_msg = t_locale.widget_pending_msg %}
+      {% elsif t_default.widget_pending_msg != blank %}
+        {% assign raw_msg = t_default.widget_pending_msg %}
+      {% endif %}
+    {% else %}
+      {% if t_locale.cashback_msg_cart != blank %}
+        {% assign raw_msg = t_locale.cashback_msg_cart %}
+      {% elsif t_default.cashback_msg_cart != blank %}
+        {% assign raw_msg = t_default.cashback_msg_cart %}
+      {% endif %}
+    {% endif %}
+  {% endif %}
+
   {% capture amount_html %}<span class="loyalty-credit-amount">{{ formatted_credit }}</span>{% endcapture %}
   {% assign final_msg = raw_msg | replace: '{loyalty_credit_amount}', amount_html %}
 
   {% assign default_msg_prod = 'Receive {loyalty_credit_amount} store credit when purchasing each item.' %}
   {% assign escaped_msg_prod = active_program.msgProduct | default: default_msg_prod | escape %}
+  {% if translations %}
+    {% if t_locale.cashback_msg_product != blank %}
+      {% assign escaped_msg_prod = t_locale.cashback_msg_product | escape %}
+    {% elsif t_default.cashback_msg_product != blank %}
+      {% assign escaped_msg_prod = t_default.cashback_msg_product | escape %}
+    {% endif %}
+  {% endif %}
 
   {% assign bg_color = shop.metafields.loyalty_cashback_app.widget_bg_color.value
     | default: shop.metafields.loyalty_cashback_app.widget_bg_color

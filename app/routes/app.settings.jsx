@@ -6,11 +6,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import WidgetsTab from "../components/settings/WidgetsTab";
 import StylingTab from "../components/settings/StylingTab";
 import TranslationTab from "../components/settings/TranslationTab";
-import { getShopPrograms } from "../services/graphql.server";
+
 
 // ─── GraphQL Queries ───────────────────────────────────────────────────────────
 
-const getPromotionWidgetsDataQuery = (namespace) => `#graphql
+const getPromotionWidgetsDataQuery = () => `#graphql
   query GetPromotionWidgetsData {
     shopLocales {
       locale
@@ -31,26 +31,8 @@ const getPromotionWidgetsDataQuery = (namespace) => `#graphql
       text_color: metafield(namespace: "loyalty_cashback_app", key: "widget_text_color") { value }
       credit_icon: metafield(namespace: "loyalty_cashback_app", key: "widget_credit_icon") { value }
       hide_watermark: metafield(namespace: "loyalty_cashback_app", key: "hide_watermark") { value }
-      # Translation metafields (localized namespace)
-      widget_pending_msg: metafield(namespace: "${namespace}", key: "widget_pending_msg") { value }
-      widget_completed_msg: metafield(namespace: "${namespace}", key: "widget_completed_msg") { value }
-      widget_history_title: metafield(namespace: "${namespace}", key: "widget_history_title") { value }
-      widget_all_transactions: metafield(namespace: "${namespace}", key: "widget_all_transactions") { value }
-      widget_received_label: metafield(namespace: "${namespace}", key: "widget_received_label") { value }
-      widget_used_label: metafield(namespace: "${namespace}", key: "widget_used_label") { value }
-      widget_load_more: metafield(namespace: "${namespace}", key: "widget_load_more") { value }
-      widget_empty_transaction: metafield(namespace: "${namespace}", key: "widget_empty_transaction") { value }
-      widget_expires_on: metafield(namespace: "${namespace}", key: "widget_expires_on") { value }
-      widget_available_credit: metafield(namespace: "${namespace}", key: "widget_available_credit") { value }
-      widget_currency_label: metafield(namespace: "${namespace}", key: "widget_currency_label") { value }
-      widget_empty_balance: metafield(namespace: "${namespace}", key: "widget_empty_balance") { value }
-      widget_expired_balance: metafield(namespace: "${namespace}", key: "widget_expired_balance") { value }
-      widget_promotion_msg: metafield(namespace: "${namespace}", key: "widget_promotion_msg") { value }
-      widget_expired_msg: metafield(namespace: "${namespace}", key: "widget_expired_msg") { value }
-      cashback_msg_product: metafield(namespace: "${namespace}", key: "cashback_msg_product") { value }
-      cashback_msg_cart: metafield(namespace: "${namespace}", key: "cashback_msg_cart") { value }
-      cashback_msg_checkout: metafield(namespace: "${namespace}", key: "cashback_msg_checkout") { value }
-      custom_msg_description: metafield(namespace: "${namespace}", key: "custom_msg_description") { value }
+      # Single translations metafield
+      translations: metafield(namespace: "loyalty_cashback_app", key: "translations") { value }
     }
   }
 `;
@@ -83,50 +65,64 @@ export async function loader({ request }) {
   const locale = url.searchParams.get("locale");
   const actionParam = url.searchParams.get("action");
 
-  // Determine namespace based on locale
-  const isPrimary = !locale || locale === "en"; // We will properly determine this from shopLocales later if needed, but the primary is usually the base namespace
-  // Actually, wait, let's just use the locale passed in if it's not the primary locale.
-  // A better way is to see if the locale matches the primary locale.
-  // But we need shopLocales first. We can do one big query.
-  
-  const namespace = locale ? `loyalty_cashback_app_${locale}` : "loyalty_cashback_app";
-  const response = await admin.graphql(getPromotionWidgetsDataQuery(namespace));
+  const response = await admin.graphql(getPromotionWidgetsDataQuery());
   const data = await response.json();
   const shop = data?.data?.shop;
   const shopLocales = data?.data?.shopLocales || [];
 
-  // If this is a specific fetch for translations only, we return just that
-  if (actionParam === "fetchTranslations") {
-    return {
-      widget_pending_msg: shop?.widget_pending_msg?.value || "",
-      widget_completed_msg: shop?.widget_completed_msg?.value || "",
-      widget_history_title: shop?.widget_history_title?.value || "",
-      widget_all_transactions: shop?.widget_all_transactions?.value || "",
-      widget_received_label: shop?.widget_received_label?.value || "",
-      widget_used_label: shop?.widget_used_label?.value || "",
-      widget_load_more: shop?.widget_load_more?.value || "",
-      widget_empty_transaction: shop?.widget_empty_transaction?.value || "",
-      widget_expires_on: shop?.widget_expires_on?.value || "",
-      widget_available_credit: shop?.widget_available_credit?.value || "",
-      widget_currency_label: shop?.widget_currency_label?.value || "",
-      widget_empty_balance: shop?.widget_empty_balance?.value || "",
-      widget_expired_balance: shop?.widget_expired_balance?.value || "",
-      widget_promotion_msg: shop?.widget_promotion_msg?.value || "",
-      widget_expired_msg: shop?.widget_expired_msg?.value || "",
-      cashback_msg_product: shop?.cashback_msg_product?.value || "",
-      cashback_msg_cart: shop?.cashback_msg_cart?.value || "",
-      cashback_msg_checkout: shop?.cashback_msg_checkout?.value || "",
-      custom_msg_description: shop?.custom_msg_description?.value || "",
-    };
+  const primaryLocale = shopLocales.find((l) => l.primary)?.locale || "en";
+  const activeLocale = locale || primaryLocale;
+
+  let translationsObj = {};
+  try {
+    if (shop?.translations?.value) {
+      translationsObj = JSON.parse(shop.translations.value);
+    }
+  } catch (err) {
+    console.error("Error parsing translations metafield:", err);
   }
 
-  // Get primary locale to correctly set namespace if locale isn't passed
-  const primaryLocale = shopLocales.find((l) => l.primary)?.locale;
-  // If the passed locale IS the primary locale, we should really use the base namespace
-  // but we already fetched using \`loyalty_cashback_app_\${locale}\` if locale was passed.
-  // If we want to be safe, if locale == primaryLocale, we should fetch base namespace.
-  // We'll handle this smoothly in the UI by passing \`locale=""\` for the primary locale.
+  const defaultEnglish = {
+    widget_pending_msg: "Thank you for your purchase! 🎉 You'll earn {loyalty_credit_amount} once your order is fulfilled. Use it on your next purchase to save more!",
+    widget_completed_msg: "🎁 You've earned {loyalty_credit_amount} for your recent order. Use it on your next purchase to save more!",
+    widget_history_title: "Credit Rewards",
+    widget_all_transactions: "All Transactions",
+    widget_received_label: "Received",
+    widget_used_label: "Used",
+    widget_load_more: "Load More",
+    widget_empty_transaction: "No transactions found.",
+    widget_expires_on: "Expires on {expired_date}",
+    widget_available_credit: "Available Store Credits",
+    widget_currency_label: "Currency",
+    widget_empty_balance: "No store credit found.",
+    widget_expired_balance: "{expired_amount} will be expired soon",
+    widget_promotion_msg: "You have {balance} store credit. Apply it now!",
+    widget_expired_msg: "{expired_amount} will be expired soon.",
+    cashback_msg_product: "",
+    cashback_msg_cart: "",
+    cashback_msg_checkout: "",
+    custom_msg_description: "",
+  };
 
+  const getTranslationVal = (key) => {
+    if (translationsObj[activeLocale]?.[key] !== undefined && translationsObj[activeLocale]?.[key] !== "") {
+      return translationsObj[activeLocale][key];
+    }
+    if (translationsObj[primaryLocale]?.[key] !== undefined && translationsObj[primaryLocale]?.[key] !== "") {
+      return translationsObj[primaryLocale][key];
+    }
+    return defaultEnglish[key] || "";
+  };
+
+  const resolvedTranslations = {};
+  Object.keys(defaultEnglish).forEach((key) => {
+    resolvedTranslations[key] = getTranslationVal(key);
+  });
+
+  // If this is a specific fetch for translations only, we return just that
+  if (actionParam === "fetchTranslations") {
+    return resolvedTranslations;
+  }
 
   const isNewCustomerAccounts = shop?.customerAccountsV2?.customerAccountsVersion === "NEW_CUSTOMER_ACCOUNTS";
 
@@ -134,6 +130,7 @@ export async function loader({ request }) {
   let activeCashbackProgram = null;
   let activeCustomProgram = null;
   try {
+    const { getShopPrograms } = await import("../services/storeCredit.server");
     const { programs } = await getShopPrograms(admin);
     activeProgram = programs.find((p) => p.status === "Active") || null;
     activeCashbackProgram = programs.find((p) => p.status === "Active" && p.programType !== "custom") || null;
@@ -152,26 +149,8 @@ export async function loader({ request }) {
     textColor: shop?.text_color?.value || "#000000",
     creditIcon: shop?.credit_icon?.value || "icon2",
     hideWatermark: shop?.hide_watermark?.value === "true",
-    // Translation values
-    widget_pending_msg: shop?.widget_pending_msg?.value || "Thank you for your purchase! 🎉 You'll earn {loyalty_credit_amount} once your order is fulfilled. Use it on your next purchase to save more!",
-    widget_completed_msg: shop?.widget_completed_msg?.value || "🎁 You've earned {loyalty_credit_amount} for your recent order. Use it on your next purchase to save more!",
-    widget_history_title: shop?.widget_history_title?.value || "Credit Rewards",
-    widget_all_transactions: shop?.widget_all_transactions?.value || "All Transactions",
-    widget_received_label: shop?.widget_received_label?.value || "Received",
-    widget_used_label: shop?.widget_used_label?.value || "Used",
-    widget_load_more: shop?.widget_load_more?.value || "Load More",
-    widget_empty_transaction: shop?.widget_empty_transaction?.value || "No transactions found.",
-    widget_expires_on: shop?.widget_expires_on?.value || "Expires on {expired_date}",
-    widget_available_credit: shop?.widget_available_credit?.value || "Available Store Credits",
-    widget_currency_label: shop?.widget_currency_label?.value || "Currency",
-    widget_empty_balance: shop?.widget_empty_balance?.value || "No store credit found.",
-    widget_expired_balance: shop?.widget_expired_balance?.value || "{expired_amount} will be expired soon",
-    widget_promotion_msg: shop?.widget_promotion_msg?.value || "You have {balance} store credit. Apply it now!",
-    widget_expired_msg: shop?.widget_expired_msg?.value || "{expired_amount} will be expired soon.",
-    cashback_msg_product: shop?.cashback_msg_product?.value || "",
-    cashback_msg_cart: shop?.cashback_msg_cart?.value || "",
-    cashback_msg_checkout: shop?.cashback_msg_checkout?.value || "",
-    custom_msg_description: shop?.custom_msg_description?.value || "",
+    // Consolidated Translation values
+    ...resolvedTranslations,
     // Active program config
     activeProgram,
     activeCashbackProgram,
@@ -233,56 +212,57 @@ export async function action({ request }) {
 
   if (actionType === "saveTranslations") {
     const { fields, locale } = payload;
-    const namespace = locale ? `loyalty_cashback_app_${locale}` : "loyalty_cashback_app";
-    
-    const metafieldsToSet = [];
-    const metafieldsToDelete = [];
 
-    Object.entries(fields).forEach(([key, value]) => {
-      const strValue = String(value).trim();
-      if (strValue === "") {
-        metafieldsToDelete.push({
-          ownerId: shopId,
-          namespace,
-          key,
-        });
-      } else {
-        metafieldsToSet.push({
-          ownerId: shopId,
-          namespace,
-          key,
-          type: "single_line_text_field",
-          value: strValue,
-        });
+    const shopQuery = `#graphql
+      query GetTranslations {
+        shopLocales {
+          locale
+          primary
+        }
+        shop {
+          translations: metafield(namespace: "loyalty_cashback_app", key: "translations") {
+            value
+          }
+        }
       }
+    `;
+    const shopRes = await admin.graphql(shopQuery);
+    const shopData = await shopRes.json();
+    const existingTranslationsVal = shopData?.data?.shop?.translations?.value;
+    const shopLocales = shopData?.data?.shopLocales || [];
+    const primaryLocale = shopLocales.find((l) => l.primary)?.locale || "en";
+
+    let translationsObj = {};
+    if (existingTranslationsVal) {
+      try {
+        translationsObj = JSON.parse(existingTranslationsVal);
+      } catch (err) {
+        console.error("Error parsing existing translations in saveTranslations action:", err);
+      }
+    }
+
+    const activeLocale = locale || primaryLocale;
+    translationsObj[activeLocale] = fields;
+    translationsObj._defaultLocale = primaryLocale;
+
+    const response = await admin.graphql(SET_METAFIELDS_MUTATION, {
+      variables: {
+        metafields: [
+          {
+            ownerId: shopId,
+            namespace: "loyalty_cashback_app",
+            key: "translations",
+            type: "json",
+            value: JSON.stringify(translationsObj),
+          },
+        ],
+      },
     });
 
-    let allErrors = [];
-
-    if (metafieldsToSet.length > 0) {
-      const response = await admin.graphql(SET_METAFIELDS_MUTATION, {
-        variables: { metafields: metafieldsToSet },
-      });
-      const data = await response.json();
-      const userErrors = data?.data?.metafieldsSet?.userErrors;
-      if (userErrors && userErrors.length > 0) {
-        allErrors = [...allErrors, ...userErrors];
-      }
-    }
-
-    if (metafieldsToDelete.length > 0) {
-      const response = await admin.graphql(DELETE_METAFIELDS_MUTATION, {
-        variables: { metafields: metafieldsToDelete },
-      });
-      const data = await response.json();
-      const userErrors = data?.data?.metafieldsDelete?.userErrors;
-      if (userErrors && userErrors.length > 0) {
-        allErrors = [...allErrors, ...userErrors];
-      }
-    }
-
-    if (allErrors.length > 0) {
-      return { success: false, errors: allErrors };
+    const data = await response.json();
+    const userErrors = data?.data?.metafieldsSet?.userErrors;
+    if (userErrors && userErrors.length > 0) {
+      return { success: false, errors: userErrors };
     }
     return { success: true };
   }

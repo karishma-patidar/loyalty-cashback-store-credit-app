@@ -11,9 +11,11 @@ function Extension() {
   const order = shopify.order.value;
 
   const [message, setMessage] = useState("");
-  const [pendingMsg, setPendingMsg] = useState("");
-  const [completedMsg, setCompletedMsg] = useState("");
+  const [translations, setTranslations] = useState(null);
   const [tone, setTone] = useState(/** @type {"info" | "success" } */("info"));
+  const [langCode, setLangCode] = useState(
+    shopify.localization?.language?.value?.isoCode?.toLowerCase() || "en"
+  );
 
   const replacePlaceholders = (text, amount, currency) => {
     return (text || "").replace(
@@ -22,25 +24,27 @@ function Extension() {
     );
   };
 
-  // Get shop metafields
+  // Get active language code dynamically
+  useEffect(() => {
+    if (!shopify.localization?.language?.subscribe) return;
+    const unsubscribe = shopify.localization.language.subscribe((lang) => {
+      if (lang?.isoCode) {
+        setLangCode(lang.isoCode.toLowerCase());
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Get shop translations metafield
   useEffect(() => {
     shopify
       .query(`
         query {
           shop {
-            metafields(
-              identifiers: [
-                {
-                  namespace: "loyalty_cashback_app"
-                  key: "widget_pending_msg"
-                }
-                {
-                  namespace: "loyalty_cashback_app"
-                  key: "widget_completed_msg"
-                }
-              ]
+            metafield(
+              namespace: "loyalty_cashback_app"
+              key: "translations"
             ) {
-              key
               value
             }
           }
@@ -50,17 +54,14 @@ function Extension() {
         const { data } = response;
         console.log("Shop Data:", data);
 
-        const metafields = data?.shop?.metafields || [];
-
-        metafields.forEach((/** @type {any} */ item) => {
-          if (item && item.key === "widget_pending_msg") {
-            setPendingMsg(item.value);
+        const val = data?.shop?.metafield?.value;
+        if (val) {
+          try {
+            setTranslations(JSON.parse(val));
+          } catch (e) {
+            console.error("Error parsing translations:", e);
           }
-
-          if (item && item.key === "widget_completed_msg") {
-            setCompletedMsg(item.value);
-          }
-        });
+        }
       })
       .catch(console.error);
   }, []);
@@ -100,8 +101,6 @@ function Extension() {
 
         const { data } = await response.json();
 
-        // console.log("Order Data:", data);
-
         const metafieldValue = data?.order?.metafield?.value;
 
         if (!metafieldValue) {
@@ -110,14 +109,22 @@ function Extension() {
         }
 
         const eventData = JSON.parse(metafieldValue);
-        // console.log("eventData", eventData);
+        const eventKeys = eventData ? Object.keys(eventData) : [];
+        const firstKey = eventKeys[0];
+        const isGrouped = firstKey && eventData[firstKey] && typeof eventData[firstKey] === "object";
+        const currencyData = isGrouped ? eventData[firstKey] : eventData;
 
-        const amount = eventData?.issuedAmount || 0;
-        const currency = eventData?.currency || "";
-        const status = eventData?.status || "Pending";
+        const amount = currencyData?.issuedAmount || 0;
+        const currency = currencyData?.currency || firstKey || "";
+        const status = currencyData?.status || "Pending";
+
+        const defaultLocale = translations?._defaultLocale || "en";
 
         if (status === "Completed") {
-          const msg = replacePlaceholders(completedMsg, amount, currency);
+          const rawTemplate = translations?.[langCode]?.widget_completed_msg ||
+            translations?.[defaultLocale]?.widget_completed_msg ||
+            "🎁 You've earned {loyalty_credit_amount} for your recent order. Use it on your next purchase to save more!";
+          const msg = replacePlaceholders(rawTemplate, amount, currency);
 
           if (isMounted) {
             setMessage(msg);
@@ -125,7 +132,10 @@ function Extension() {
           }
           // Stop polling once Completed
         } else {
-          const msg = replacePlaceholders(pendingMsg, amount, currency);
+          const rawTemplate = translations?.[langCode]?.widget_pending_msg ||
+            translations?.[defaultLocale]?.widget_pending_msg ||
+            "Thank you for your purchase! 🎉 You'll earn {loyalty_credit_amount} once your order is fulfilled. Use it on your next purchase to save more!";
+          const msg = replacePlaceholders(rawTemplate, amount, currency);
 
           if (isMounted) {
             setMessage(msg);
@@ -146,7 +156,7 @@ function Extension() {
       isMounted = false;
       clearTimeout(timeoutId);
     };
-  }, [order?.id, pendingMsg, completedMsg]);
+  }, [order?.id, translations, langCode]);
 
   if (!message) {
     return null;

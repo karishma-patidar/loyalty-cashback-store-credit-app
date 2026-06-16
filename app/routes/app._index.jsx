@@ -135,6 +135,22 @@ export const loader = async ({ request }) => {
         },
       },
     });
+
+    await admin.graphql(defMutation, {
+      variables: {
+        definition: {
+          name: "Loyalty Translations",
+          namespace: "loyalty_cashback_app",
+          key: "translations",
+          type: "json",
+          description: "All translation data for loyalty widgets",
+          ownerType: "SHOP",
+          access: {
+            storefront: "PUBLIC_READ"
+          }
+        },
+      },
+    });
   } catch (err) {
     // Ignore if definitions already exist
   }

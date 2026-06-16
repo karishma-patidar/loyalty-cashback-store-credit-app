@@ -95,10 +95,16 @@ function buildOrderMetafields(
   notifyEvent: OrderEvent,
   status: string,
 ): Metafield[] {
+  const payload = {
+    [currencyCode]: {
+      ...notifyEvent,
+      status,
+      issuedAmount: cashbackAmount,
+      currency: currencyCode,
+    }
+  };
   return [
-    { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'issued_amount', type: 'number_decimal', value: String(cashbackAmount) },
-    { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'currency', type: 'single_line_text_field', value: String(currencyCode) },
-    { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'cashback_notify', type: 'json', value: JSON.stringify({ ...notifyEvent, status }) },
+    { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'cashback_notify', type: 'json', value: JSON.stringify(payload) },
   ];
 }
 
@@ -643,10 +649,23 @@ export async function processDelayedCredits(
           const noteData = await noteRes.json();
           const updatedNote = appendNoteIfMissing(noteData?.data?.order?.note ?? '', appNote);
 
+          const payload = {
+            [ev.currency || 'USD']: {
+              ...ev,
+              issuedAmount: ev.issuedAmount,
+              currency: ev.currency,
+              status: ev.status,
+            }
+          };
+
           await updateOrderShopifyData(adminClient, ev.orderId, [
-            { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'issued_amount', type: 'number_decimal', value: String(ev.issuedAmount) },
-            { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'currency', type: 'single_line_text_field', value: String(ev.currency) },
-            { ownerId: orderGid, namespace: 'loyalty_cashback_app', key: 'cashback_notify', type: 'json', value: JSON.stringify(ev) },
+            {
+              ownerId: orderGid,
+              namespace: 'loyalty_cashback_app',
+              key: 'cashback_notify',
+              type: 'json',
+              value: JSON.stringify(payload)
+            },
           ], updatedNote);
 
           console.log(`🎉 [Delayed] Updated order ${ev.orderName} to COMPLETED.`);

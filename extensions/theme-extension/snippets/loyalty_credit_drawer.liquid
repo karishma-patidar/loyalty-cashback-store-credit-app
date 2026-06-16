@@ -1,10 +1,25 @@
+{% comment %} --- Resolve translated cart message --- {% endcomment %}
+{% assign translations = shop.metafields.loyalty_cashback_app.translations.value
+  | default: shop.metafields.loyalty_cashback_app.translations %}
+{% assign resolved_msg_cart = active_program.msgCart %}
+{% if translations %}
+  {% assign current_lang = request.locale.iso_code | downcase %}
+  {% assign t_default_locale = translations._defaultLocale | default: 'en' %}
+  {% assign t_locale = translations[current_lang] %}
+  {% assign t_default = translations[t_default_locale] %}
+  {% if t_locale.cashback_msg_cart != blank %}
+    {% assign resolved_msg_cart = t_locale.cashback_msg_cart %}
+  {% elsif t_default.cashback_msg_cart != blank %}
+    {% assign resolved_msg_cart = t_default.cashback_msg_cart %}
+  {% endif %}
+{% endif %}
 <script>
   window.LoyaltyCredit = {
     amount: {{ active_program.amount | json }},
     amountType: {{ active_program.amountType | json }},
     maxAmount: {{ active_program.maxAmount | json }},
     programType: {{ active_program.programType | json }},
-    msgCart: {{ active_program.msgCart | json }},
+    msgCart: {{ resolved_msg_cart | json }},
     currencySymbol: {{ cart.currency.symbol | json }},
     showCartDrawerPoints: {{ active_program.showCartDrawerPoints | default: false | json }},
     eligibilityD2c: {{ active_program.eligibility.d2c | default: false | json }},
