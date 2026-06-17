@@ -84,7 +84,7 @@ function Extension() {
           }
         }
       }
-    `).then((response) => {
+    `).then((/** @type {any} */ response) => {
       const shopData = response?.data?.shop;
       const fetchedHost = shopData?.primaryDomain?.host || "loyalty-store-credit.myshopify.com";
       setShopDomain(fetchedHost);

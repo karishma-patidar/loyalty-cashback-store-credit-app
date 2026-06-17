@@ -91,7 +91,10 @@ export default function WidgetsTab({ loaderData }) {
 
   const getWidgetStatus = (widget) => {
     if (widget.id === "checkout-widget") {
-      return themeAppExtensionExists.cashbackOffer;
+      return themeAppExtensionExists.hasCreditBalanceUI ? "active" : null;
+    }
+    if (widget.id === "credit-history" && isNewCustomerAccounts) {
+      return themeAppExtensionExists.hasCreditHistoryUI ? "active" : null;
     }
     if (widget.id === "notification-banner") {
       if (themeAppExtensionExists.hasCashbackNotificationUI) return "active";
@@ -129,10 +132,29 @@ export default function WidgetsTab({ loaderData }) {
 
 
   const handleSetup = (widget) => {
+    const status = getWidgetStatus(widget);
+    if (status === "active") {
+      return;
+    }
+
     const cleanShop = shop ? shop.replace(/^https?:\/\//, "") : "";
+
     if (widget.id === "notification-banner") {
       const editorUrl = `https://${cleanShop}/admin/settings/checkout/editor?page=order-status&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/cashback_notification`;
+      window.open(editorUrl, "_blank", "noopener,noreferrer");
+      shopify.toast.show("Opening Checkout Customization Editor...");
+      return;
+    }
 
+    if (widget.id === "checkout-widget") {
+      const editorUrl = `https://${cleanShop}/admin/settings/checkout/editor?page=checkout&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/store-credit-balance`;
+      window.open(editorUrl, "_blank", "noopener,noreferrer");
+      shopify.toast.show("Opening Checkout Customization Editor...");
+      return;
+    }
+
+    if (widget.id === "credit-history" && isNewCustomerAccounts) {
+      const editorUrl = `https://${cleanShop}/admin/settings/checkout/editor?page=profile&addAppBlockId=4639e8c9e33fe4badd965e769d8b46da/store-credit-history`;
       window.open(editorUrl, "_blank", "noopener,noreferrer");
       shopify.toast.show("Opening Checkout Customization Editor...");
       return;

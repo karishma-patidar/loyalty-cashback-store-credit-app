@@ -429,7 +429,7 @@ export default function Index() {
   // Check if there is any active widget block (excluding loyalty_credit_app_embed)
   const isAnyWidgetActive = themeAppExtensionExists.themeActivations?.some(
     (act) => act.handle !== "loyalty_credit_app_embed" && act.status === "active" && (!act.activations || act.activations.length > 0)
-  ) || false;
+  ) || themeAppExtensionExists.hasCreditBalanceUI || themeAppExtensionExists.hasCreditHistoryUI || themeAppExtensionExists.hasCashbackNotificationUI || false;
 
   useEffect(() => {
     if (!themeAppExtensionExists.loaded) return;

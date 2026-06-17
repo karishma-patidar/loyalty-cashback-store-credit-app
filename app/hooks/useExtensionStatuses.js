@@ -30,27 +30,48 @@ export function useExtensionStatuses(isNewCustomerAccounts) {
         const uiExt = extensions.find((e) => e.type === "ui_extension" && e.handle === "cashback-notification");
         const hasCashbackNotificationUI = uiExt?.activations?.length > 0;
 
+        // Store credit history customer account UI extension status
+        const historyExt = extensions.find((e) => e.type === "ui_extension" && e.handle === "store-credit-history");
+        const hasCreditHistoryUI = historyExt?.activations?.length > 0;
+
+        // Store credit balance checkout UI extension status
+        const balanceExt = extensions.find((e) => e.type === "ui_extension" && e.handle === "store-credit-balance");
+        const hasCreditBalanceUI = balanceExt?.activations?.length > 0;
+
         if (active) {
           setThemeAppExtensionExists({
             customForm: customForm?.status ?? null,
             cashbackOffer: cashbackOffer?.status ?? null,
             themeActivations: themeExt?.activations || [],
             hasCashbackNotificationUI: hasCashbackNotificationUI || false,
+            hasCreditHistoryUI: hasCreditHistoryUI || false,
+            hasCreditBalanceUI: hasCreditBalanceUI || false,
             loaded: true,
           });
         }
       } catch (err) {
         console.error("[useExtensionStatuses]", err);
         if (active) {
-          setThemeAppExtensionExists((prev) => ({ ...prev, loaded: true }));
+          setThemeAppExtensionExists((prev) => ({
+            ...prev,
+            loaded: true,
+            hasCreditHistoryUI: false,
+            hasCreditBalanceUI: false,
+          }));
         }
       }
     }
 
     fetchStatuses();
 
+    const handleFocus = () => {
+      fetchStatuses();
+    };
+    window.addEventListener("focus", handleFocus);
+
     return () => {
       active = false;
+      window.removeEventListener("focus", handleFocus);
     };
   }, [isNewCustomerAccounts, shopify]);
 
