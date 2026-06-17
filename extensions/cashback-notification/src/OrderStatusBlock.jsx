@@ -118,11 +118,15 @@ function Extension() {
         const currency = currencyData?.currency || firstKey || "";
         const status = currencyData?.status || "Pending";
 
-        const defaultLocale = translations?._defaultLocale || "en";
+        const defaultLocale = (translations?.defaultLocale || translations?._defaultLocale || "en").toLowerCase();
+        const defaultBaseLocale = defaultLocale.split("-")[0];
+        const baseLang = langCode.split("-")[0];
 
         if (status === "Completed") {
           const rawTemplate = translations?.[langCode]?.widget_completed_msg ||
+            translations?.[baseLang]?.widget_completed_msg ||
             translations?.[defaultLocale]?.widget_completed_msg ||
+            translations?.[defaultBaseLocale]?.widget_completed_msg ||
             "🎁 You've earned {loyalty_credit_amount} for your recent order. Use it on your next purchase to save more!";
           const msg = replacePlaceholders(rawTemplate, amount, currency);
 
@@ -133,7 +137,9 @@ function Extension() {
           // Stop polling once Completed
         } else {
           const rawTemplate = translations?.[langCode]?.widget_pending_msg ||
+            translations?.[baseLang]?.widget_pending_msg ||
             translations?.[defaultLocale]?.widget_pending_msg ||
+            translations?.[defaultBaseLocale]?.widget_pending_msg ||
             "Thank you for your purchase! 🎉 You'll earn {loyalty_credit_amount} once your order is fulfilled. Use it on your next purchase to save more!";
           const msg = replacePlaceholders(rawTemplate, amount, currency);
 

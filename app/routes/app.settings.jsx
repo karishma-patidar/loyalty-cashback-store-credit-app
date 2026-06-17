@@ -108,6 +108,10 @@ export async function loader({ request }) {
     if (translationsObj[activeLocale]?.[key] !== undefined && translationsObj[activeLocale]?.[key] !== "") {
       return translationsObj[activeLocale][key];
     }
+    const fallbackLocale = translationsObj.defaultLocale || translationsObj._defaultLocale || primaryLocale;
+    if (translationsObj[fallbackLocale]?.[key] !== undefined && translationsObj[fallbackLocale]?.[key] !== "") {
+      return translationsObj[fallbackLocale][key];
+    }
     if (translationsObj[primaryLocale]?.[key] !== undefined && translationsObj[primaryLocale]?.[key] !== "") {
       return translationsObj[primaryLocale][key];
     }
@@ -243,7 +247,9 @@ export async function action({ request }) {
 
     const activeLocale = locale || primaryLocale;
     translationsObj[activeLocale] = fields;
-    translationsObj._defaultLocale = primaryLocale;
+    const existingDefault = translationsObj.defaultLocale || translationsObj._defaultLocale || primaryLocale;
+    translationsObj.defaultLocale = existingDefault;
+    translationsObj._defaultLocale = existingDefault;
 
     const response = await admin.graphql(SET_METAFIELDS_MUTATION, {
       variables: {

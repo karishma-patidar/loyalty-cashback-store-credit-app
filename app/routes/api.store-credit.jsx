@@ -104,16 +104,39 @@ export const loader = async ({ request }) => {
   }
 
   try {
-    // 1. Fetch customer store credit balance from Shopify GraphQL Admin API
+    // 1. Fetch customer store credit balance and store currencies from Shopify GraphQL Admin API
     let balance = "0.00";
     let currency = "USD";
+    const balances = {};
+    let enabledCurrencies = [];
 
     try {
       const { admin } = await unauthenticated.admin(shop);
+      
+      // Fetch shop currencies
+      try {
+        const shopCurrencyQuery = `#graphql
+          query getShopCurrencies {
+            shop {
+              currencyCode
+              enabledPresentmentCurrencies
+            }
+          }
+        `;
+        const currencyRes = await admin.graphql(shopCurrencyQuery);
+        const currencyJson = await currencyRes.json();
+        currency = currencyJson?.data?.shop?.currencyCode || "USD";
+        enabledCurrencies = currencyJson?.data?.shop?.enabledPresentmentCurrencies || [currency];
+      } catch (currencyErr) {
+        console.error("Error fetching shop default currencies:", currencyErr);
+        enabledCurrencies = ["USD"];
+      }
+
+      // Fetch customer store credit accounts
       const shopifyQuery = `#graphql
         query getCustomerStoreCreditAccount($id: ID!) {
           customer(id: $id) {
-            storeCreditAccounts(first: 1) {
+            storeCreditAccounts(first: 10) {
               edges {
                 node {
                   balance {
@@ -126,25 +149,33 @@ export const loader = async ({ request }) => {
           }
         }
       `;
-      const res = await admin.graphql(shopifyQuery, { variables: { id: customerId } });
+      const customerGid = customerId.startsWith("gid://shopify/Customer/")
+        ? customerId
+        : `gid://shopify/Customer/${customerId}`;
+
+      const res = await admin.graphql(shopifyQuery, { variables: { id: customerGid } });
       const resJson = await res.json();
-      const account = resJson?.data?.customer?.storeCreditAccounts?.edges?.[0]?.node;
-      if (account && account.balance) {
-        balance = account.balance.amount;
-        currency = account.balance.currencyCode;
-      } else {
-        // If no account, get shop default currency
-        const shopCurrencyQuery = `#graphql
-          query getShopCurrency {
-            shop {
-              currencyCode
-            }
+      const accounts = resJson?.data?.customer?.storeCreditAccounts?.edges || [];
+      
+      if (accounts.length > 0) {
+        const firstAccount = accounts[0].node;
+        balance = firstAccount.balance.amount;
+        currency = firstAccount.balance.currencyCode;
+        
+        accounts.forEach(edge => {
+          const bal = edge.node?.balance;
+          if (bal) {
+            balances[bal.currencyCode] = bal.amount;
           }
-        `;
-        const currencyRes = await admin.graphql(shopCurrencyQuery);
-        const currencyJson = await currencyRes.json();
-        currency = currencyJson?.data?.shop?.currencyCode || "USD";
+        });
       }
+
+      // Ensure all enabled currencies have at least 0.00 balance
+      enabledCurrencies.forEach(code => {
+        if (balances[code] === undefined) {
+          balances[code] = "0.00";
+        }
+      });
     } catch (err) {
       console.error("Error fetching balance from Shopify Admin API:", err);
     }
@@ -152,7 +183,46 @@ export const loader = async ({ request }) => {
     // 2. Load transactions from MongoDB
     await connectMongoDB();
     const ShopModel = getShopModel(shop);
-    const docs = ShopModel ? await ShopModel.find({}) : [];
+    let docs = ShopModel ? await ShopModel.find({}) : [];
+
+    // One-time self-healing database migration to backfill missing expiresAt values
+    let migrated = false;
+    let program = null;
+    try {
+      const { admin } = await unauthenticated.admin(shop);
+      const { getShopPrograms } = await import("../services/storeCredit.server");
+      const programs = await getShopPrograms(admin) || [];
+      program = programs.find(p => p.status === 'Active' || p.status === 'true' || p.status === true) || programs[0];
+    } catch (err) {
+      console.error("Error fetching program for database self-healing:", err);
+    }
+
+    const defaultExpDays = program && (program.enableExpiration === true || program.enableExpiration === "true") && program.expirationType === "duration"
+      ? parseInt(program.expirationDays || "15", 10)
+      : 15;
+
+    for (const doc of docs) {
+      let docChanged = false;
+      if (doc.events && Array.isArray(doc.events)) {
+        for (const ev of doc.events) {
+          if (ev.status === "Completed" && ev.issuedAmount > 0 && !ev.expiresAt) {
+            const created = ev.issuedAt || ev.createdAt || doc.createdAt || new Date();
+            const expDate = new Date(created);
+            expDate.setDate(expDate.getDate() + defaultExpDays);
+            ev.expiresAt = expDate;
+            docChanged = true;
+            migrated = true;
+          }
+        }
+      }
+      if (docChanged) {
+        await ShopModel.updateOne({ _id: doc._id }, { $set: { events: doc.events } });
+      }
+    }
+
+    if (migrated && ShopModel) {
+      docs = await ShopModel.find({});
+    }
 
     const transactions = [];
     const customerGid = customerId;
@@ -205,6 +275,8 @@ export const loader = async ({ request }) => {
       JSON.stringify({
         balance,
         currency,
+        balances,
+        enabledCurrencies,
         transactions,
       }),
       {

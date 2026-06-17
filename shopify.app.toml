@@ -5,19 +5,19 @@ name = "loyalty cashback store credit"
 application_url = "https://example.com"
 embedded = true
 
-[build]
-automatically_update_urls_on_dev = true
-
 [webhooks]
 api_version = "2026-01"
 
   [[webhooks.subscriptions]]
-  topics = [ "orders/create", "orders/fulfilled", "customers/create" ]
+  topics = [ "orders/fulfilled", "customers/create", "orders/create" ]
   uri = "/webhooks"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,write_customers,customer_read_orders,read_fulfillments,read_orders,read_store_credit_accounts,write_orders,write_products,write_store_credit_account_transactions,write_themes,read_locales"
+scopes = "customer_read_orders,read_customers,read_fulfillments,read_locales,read_orders,read_store_credit_accounts,write_customers,write_orders,write_products,write_store_credit_account_transactions,write_themes"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = true

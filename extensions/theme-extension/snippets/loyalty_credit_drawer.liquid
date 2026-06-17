@@ -4,7 +4,7 @@
 {% assign resolved_msg_cart = active_program.msgCart %}
 {% if translations %}
   {% assign current_lang = request.locale.iso_code | downcase %}
-  {% assign t_default_locale = translations._defaultLocale | default: 'en' %}
+  {% assign t_default_locale = translations.defaultLocale | default: translations._defaultLocale | default: 'en' %}
   {% assign t_locale = translations[current_lang] %}
   {% assign t_default = translations[t_default_locale] %}
   {% if t_locale.cashback_msg_cart != blank %}

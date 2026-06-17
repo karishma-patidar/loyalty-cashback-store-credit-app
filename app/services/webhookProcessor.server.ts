@@ -38,7 +38,7 @@ interface OrderEvent {
   createdAt: Date;
   exchangeRate?: number;
   processAt?: Date;
-  expiresAt?: string | null;
+  expiresAt?: Date | string | null;
   shouldNotify?: boolean;
   programId?: string;
   programName?: string;
@@ -396,6 +396,7 @@ async function handleOrderFulfilled(
     ...(isCustom ? { programId } : {}),
     programName: program.programName || program.internalName || program.name,
     redeemedAmount, issuedAt: new Date(), createdAt: existingTx?.createdAt ?? new Date(),
+    expiresAt: expiresAt ? new Date(expiresAt) : null,
   };
 
   await upsertOrderEvent(ShopModel, todayStr, orderId, eventToSave, existingDocId);
@@ -626,6 +627,7 @@ export async function processDelayedCredits(
           ev.emailStatus = program.notifyEmail ? (emailFailed ? 'Failed' : 'Sent') : ev.emailStatus;
           ev.emailFailReason = emailFailed ? 'Unsupported API' : '';
           ev.issuedAt = new Date();
+          ev.expiresAt = expiresAt ? new Date(expiresAt) : null;
 
           const arrayFilters: any[] = [{ 'elem.orderId': ev.orderId }];
           if (ev.programId) {

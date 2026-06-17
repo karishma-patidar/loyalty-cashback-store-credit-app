@@ -42,117 +42,158 @@ export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   await syncMongoStoreSession(session);
 
-  // Ensure Metafield Definitions exist under Shopify Admin Settings -> Custom Data
+  // Ensure Metafield Definitions exist under Shopify Admin Settings -> Custom Data and have Storefront & Customer Account Read Access
   try {
-    const defMutation = `#graphql
+    const getDefsQuery = `#graphql
+      query GetMetafieldDefinitions {
+        metafieldDefinitions(first: 100, ownerType: SHOP) {
+          nodes {
+            id
+            namespace
+            key
+            access {
+              storefront
+              customerAccount
+            }
+          }
+        }
+      }
+    `;
+
+    const defsResponse = await admin.graphql(getDefsQuery);
+    const defsJson = await defsResponse.json();
+    const existingDefs = defsJson?.data?.metafieldDefinitions?.nodes || [];
+
+    const REQUIRED_DEFINITIONS = [
+      {
+        name: "Loyalty Cashback Programs",
+        namespace: "loyalty_cashback_app",
+        key: "programs",
+        type: "json",
+        description: "Stores loyalty program configurations for Loyalty Store Credit app",
+        ownerType: "SHOP",
+        access: { storefront: "PUBLIC_READ", customerAccount: "READ" }
+      },
+      {
+        name: "Loyalty App Active Status",
+        namespace: "loyalty_cashback_app",
+        key: "app_active",
+        type: "single_line_text_field",
+        description: "Stores active/inactive toggle status for Loyalty Store Credit app",
+        ownerType: "SHOP",
+        access: { storefront: "PUBLIC_READ", customerAccount: "READ" }
+      },
+      {
+        name: "Loyalty App URL",
+        namespace: "loyalty_cashback_app",
+        key: "app_url",
+        type: "single_line_text_field",
+        description: "Stores the app backend URL",
+        ownerType: "SHOP",
+        access: { storefront: "PUBLIC_READ", customerAccount: "READ" }
+      },
+      {
+        name: "Loyalty Widget Pending Msg",
+        namespace: "loyalty_cashback_app",
+        key: "widget_pending_msg",
+        type: "single_line_text_field",
+        description: "Pending message for customer cashback",
+        ownerType: "SHOP",
+        access: { storefront: "PUBLIC_READ", customerAccount: "READ" }
+      },
+      {
+        name: "Loyalty Widget Completed Msg",
+        namespace: "loyalty_cashback_app",
+        key: "widget_completed_msg",
+        type: "single_line_text_field",
+        description: "Completed message for customer cashback",
+        ownerType: "SHOP",
+        access: { storefront: "PUBLIC_READ", customerAccount: "READ" }
+      },
+      {
+        name: "Loyalty Translations",
+        namespace: "loyalty_cashback_app",
+        key: "translations",
+        type: "json",
+        description: "All translation data for loyalty widgets",
+        ownerType: "SHOP",
+        access: { storefront: "PUBLIC_READ", customerAccount: "READ" }
+      }
+    ];
+
+    const createMutation = `#graphql
       mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
         metafieldDefinitionCreate(definition: $definition) {
           createdDefinition {
             id
             name
           }
+          userErrors {
+            field
+            message
+          }
         }
       }
     `;
-    await admin.graphql(defMutation, {
-      variables: {
-        definition: {
-          name: "Loyalty Cashback Programs",
-          namespace: "loyalty_cashback_app",
-          key: "programs",
-          type: "json",
-          description:
-            "Stores loyalty program configurations for Loyalty Store Credit app",
-          ownerType: "SHOP",
-          access: {
-            storefront: "PUBLIC_READ"
-          }
-        },
-      },
-    });
 
-    await admin.graphql(defMutation, {
-      variables: {
-        definition: {
-          name: "Loyalty App Active Status",
-          namespace: "loyalty_cashback_app",
-          key: "app_active",
-          type: "single_line_text_field",
-          description:
-            "Stores active/inactive toggle status for Loyalty Store Credit app",
-          ownerType: "SHOP",
-          access: {
-            storefront: "PUBLIC_READ"
+    const updateMutation = `#graphql
+      mutation UpdateMetafieldDefinition($definition: MetafieldDefinitionUpdateInput!) {
+        metafieldDefinitionUpdate(definition: $definition) {
+          updatedDefinition {
+            id
+            name
+            access {
+              storefront
+              customerAccount
+            }
           }
-        },
-      },
-    });
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
 
-    await admin.graphql(defMutation, {
-      variables: {
-        definition: {
-          name: "Loyalty App URL",
-          namespace: "loyalty_cashback_app",
-          key: "app_url",
-          type: "single_line_text_field",
-          description: "Stores the app backend URL",
-          ownerType: "SHOP",
-          access: {
-            storefront: "PUBLIC_READ"
-          }
-        },
-      },
-    });
+    for (const req of REQUIRED_DEFINITIONS) {
+      const existing = existingDefs.find(
+        (d) => d.namespace === req.namespace && d.key === req.key
+      );
 
-    await admin.graphql(defMutation, {
-      variables: {
-        definition: {
-          name: "Loyalty Widget Pending Msg",
-          namespace: "loyalty_cashback_app",
-          key: "widget_pending_msg",
-          type: "single_line_text_field",
-          description: "Pending message for customer cashback",
-          ownerType: "SHOP",
-          access: {
-            storefront: "PUBLIC_READ"
-          }
-        },
-      },
-    });
+      if (!existing) {
+        // Create the definition since it does not exist
+        const res = await admin.graphql(createMutation, {
+          variables: { definition: req }
+        });
+        const resJson = await res.json();
+        console.log(`Created definition for ${req.key}:`, JSON.stringify(resJson?.data?.metafieldDefinitionCreate));
+      } else {
+        // Definition exists, verify if storefront or customer account access needs updating
+        const needsUpdate = 
+          existing.access?.storefront !== "PUBLIC_READ" || 
+          existing.access?.customerAccount !== "READ";
 
-    await admin.graphql(defMutation, {
-      variables: {
-        definition: {
-          name: "Loyalty Widget Completed Msg",
-          namespace: "loyalty_cashback_app",
-          key: "widget_completed_msg",
-          type: "single_line_text_field",
-          description: "Completed message for customer cashback",
-          ownerType: "SHOP",
-          access: {
-            storefront: "PUBLIC_READ"
-          }
-        },
-      },
-    });
-
-    await admin.graphql(defMutation, {
-      variables: {
-        definition: {
-          name: "Loyalty Translations",
-          namespace: "loyalty_cashback_app",
-          key: "translations",
-          type: "json",
-          description: "All translation data for loyalty widgets",
-          ownerType: "SHOP",
-          access: {
-            storefront: "PUBLIC_READ"
-          }
-        },
-      },
-    });
+        if (needsUpdate) {
+          const res = await admin.graphql(updateMutation, {
+            variables: {
+              definition: {
+                namespace: req.namespace,
+                key: req.key,
+                ownerType: "SHOP",
+                access: {
+                  storefront: "PUBLIC_READ",
+                  customerAccount: "READ"
+                }
+              }
+            }
+          });
+          const resJson = await res.json();
+          console.log(`Updated definition storefront/customer access for ${req.key}:`, JSON.stringify(resJson?.data?.metafieldDefinitionUpdate));
+        }
+      }
+    }
   } catch (err) {
-    // Ignore if definitions already exist
+    console.error("Error syncing metafield definitions:", err);
   }
 
   // Fetch app active status, programs, and widgets added status
