@@ -717,7 +717,7 @@ export default function OnboardingWizard({
   const [endTime, setEndTime] = useState(initialProgram?.endTime || "06:35");
   const [showCartDrawerPoints, setShowCartDrawerPoints] = useState(initialProgram?.showCartDrawerPoints ?? true);
   const [msgCart, setMsgCart] = useState(initialProgram?.msgCart || "You will get <strong>{loyalty_credit_amount}</strong> store credit after this purchase.");
-  const [msgProduct, setMsgProduct] = useState(initialProgram?.msgProduct || "Receive {loyalty_credit_amount} store credit when purchasing each item.");
+  const [msgProduct, setMsgProduct] = useState(initialProgram?.msgProduct || "Receive <strong>{loyalty_credit_amount}</strong> store credit when purchasing each item.");
   const [notifyEmail, setNotifyEmail] = useState(initialProgram?.notifyEmail ?? false);
   const [previewPage, setPreviewPage] = useState("product");
 

@@ -109,7 +109,7 @@ function ProfileExtension() {
       const fetchedHost = shopData?.primaryDomain?.host || "loyalty-store-credit.myshopify.com";
       setShopDomain(fetchedHost);
 
-      const appUrlVal = shopData?.app_url?.value || "https://affecting-attention-bases-keyboards.trycloudflare.com";
+      const appUrlVal = shopData?.app_url?.value || "https://kodak-pensions-jones-antiques.trycloudflare.com";
       setAppUrl(appUrlVal);
 
       let parsedTranslations = {};
@@ -124,7 +124,7 @@ function ProfileExtension() {
     }).catch((err) => {
       console.error("Storefront API query error in ProfileBlock:", err);
       setShopDomain("loyalty-store-credit.myshopify.com");
-      setAppUrl("https://affecting-attention-bases-keyboards.trycloudflare.com");
+      setAppUrl("https://kodak-pensions-jones-antiques.trycloudflare.com");
     });
 
     return () => {
@@ -389,8 +389,6 @@ function ProfileExtension() {
 
         {/* Left Column: Credit Rewards */}
         <s-stack gap="base">
-
-
           <s-box background="base" border="base" borderRadius="large" padding="large">
             <s-stack gap="base">
 
@@ -407,7 +405,7 @@ function ProfileExtension() {
                   >
                     <s-stack direction="inline" gap="small-200" alignItems="center">
                       <s-icon type="credit-card" tone="info" />
-                      <s-text type="strong" tone="info">{t("widget_all_transactions")}</s-text>
+                      <s-text tone="info">{t("widget_all_transactions")}</s-text>
                     </s-stack>
                   </s-clickable>
                 ) : (
@@ -437,7 +435,7 @@ function ProfileExtension() {
                   >
                     <s-stack direction="inline" gap="small-200" alignItems="center">
                       <s-icon type="arrow-up" tone="success" />
-                      <s-text type="strong" tone="success">{t("widget_received_label")}</s-text>
+                      <s-text tone="success">{t("widget_received_label")}</s-text>
                     </s-stack>
                   </s-clickable>
                 ) : (
@@ -467,7 +465,7 @@ function ProfileExtension() {
                   >
                     <s-stack direction="inline" gap="small-200" alignItems="center">
                       <s-icon type="arrow-down" tone="critical" />
-                      <s-text type="strong" tone="critical">{t("widget_used_label")}</s-text>
+                      <s-text tone="critical">{t("widget_used_label")}</s-text>
                     </s-stack>
                   </s-clickable>
                 ) : (
@@ -490,7 +488,7 @@ function ProfileExtension() {
               {/* Transaction List */}
               <s-box padding="none">
                 {visibleLimit > 8 ? (
-                  <s-scroll-box maxBlockSize="620px">
+                  <s-scroll-box maxBlockSize="580px">
                     <s-stack gap="none">
                       {transactionRows}
                     </s-stack>
