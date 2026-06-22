@@ -6,10 +6,9 @@ import {
   calculateExpirationDate,
   AdminClient,
   ShopifyOrderPayload,
+  ProgramSettings,
 } from './storeCredit.server';
 import { connectMongoDB, getCustomerModel } from '../db.mongodb.server';
-
-declare const process: any;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +18,17 @@ interface Metafield {
   key: string;
   type: string;
   value: string;
+}
+
+interface ShopifyTransaction {
+  gateway?: string;
+  status?: string;
+  kind?: string;
+  amountSet?: {
+    presentmentMoney?: {
+      amount?: string;
+    };
+  };
 }
 
 interface OrderEvent {
@@ -130,7 +140,7 @@ function appendNoteIfMissing(currentNote: string, appNote: string): string | und
 // ─── Store Credit Helpers ─────────────────────────────────────────────────────
 
 function extractRedeemedAmount(
-  txs: any[],
+  txs: ShopifyTransaction[],
   hasStoreCreditGateway: boolean,
   totalDiscounts: string,
 ): number {
@@ -165,17 +175,18 @@ function extractRedeemedAmount(
 // ─── MongoDB Helpers ──────────────────────────────────────────────────────────
 
 async function upsertOrderEvent(
-  ShopModel: any,
+  ShopModel: ReturnType<typeof getCustomerModel>,
   dateStr: string,
   orderId: string,
   newEvent: OrderEvent,
   existingDocId?: string,
 ): Promise<void> {
+  if (!ShopModel) return;
   const programId = newEvent.programId;
 
   if (existingDocId) {
-    const query: any = { _id: existingDocId, 'events.orderId': orderId };
-    const arrayFilters: any[] = [{ 'elem.orderId': orderId }];
+    const query: Record<string, unknown> = { _id: existingDocId, 'events.orderId': orderId };
+    const arrayFilters: Record<string, unknown>[] = [{ 'elem.orderId': orderId }];
 
     if (programId) {
       query['events.programId'] = programId;
@@ -203,7 +214,7 @@ async function upsertOrderEvent(
     return;
   }
 
-  const elemMatchQuery: any = { orderId };
+  const elemMatchQuery: Record<string, unknown> = { orderId };
   if (programId) {
     elemMatchQuery.programId = programId;
   } else {
@@ -337,10 +348,6 @@ async function handleOrderFulfilled(
       ? parseFloat(orderPayload.total_price ?? '0') / parseFloat(orderPayload.current_total_price ?? '0')
       : 1;
 
-  const gateways: string[] = orderPayload.payment_gateway_names ?? [];
-  const hasStoreCreditGateway = gateways.some(
-    (g) => g.toLowerCase().includes('store_credit') || g.toLowerCase().includes('store credit'),
-  );
   const redeemedAmount = existingTx?.redeemedAmount ?? 0;
 
   if (hasDelay) {
@@ -391,7 +398,7 @@ async function handleOrderFulfilled(
     emailStatus: isSuccessful ? finalEmailStatus : 'Failed',
     emailFailReason: isSuccessful
       ? finalEmailFailReason
-      : storeCreditResult?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed',
+      : storeCreditResult?.userErrors?.map((e: { message: string }) => e.message).join(', ') ?? 'Failed',
     programType: isCustom ? 'Custom Program' : 'Cashback',
     ...(isCustom ? { programId } : {}),
     programName: program.programName || program.internalName || program.name,
@@ -441,8 +448,8 @@ interface WebhookContext {
   adminClient: AdminClient;
   orderPayload: ShopifyOrderPayload;
   shop: string;
-  program: any;
-  ShopModel: any;
+  program: ProgramSettings;
+  ShopModel: ReturnType<typeof getCustomerModel>;
   todayStr: string;
   customerId: string;
   customerName: string;
@@ -505,7 +512,7 @@ export async function processOrderWebhook(
 
   // Fetch all active loyalty programs
   const programs = await getShopPrograms(adminClient);
-  const activePrograms = programs?.filter((p: any) => 
+  const activePrograms = programs?.filter((p: ProgramSettings) => 
     (p.status === 'Active' || p.status === 'true' || p.status === true)
   ) || [];
 
@@ -533,13 +540,11 @@ export async function processOrderWebhook(
   const mappedOrder = {
     current_total_price: orderPayload.current_total_price,
     currency: orderPayload.currency,
-    line_items: orderPayload.line_items?.map((item: any) => ({
+    line_items: orderPayload.line_items?.map((item: { price?: string; quantity?: number | string }) => ({
       price: item.price,
       quantity: item.quantity,
     })) ?? [],
   };
-
-  const customerOrdersCount = parseInt(String(orderPayload?.customer?.orders_count || "0"), 10);
 
   // Loop through all active programs and process rewards for each one
   for (const program of activePrograms) {
@@ -556,7 +561,7 @@ export async function processOrderWebhook(
 
     const isCustom = program.programType === 'custom';
     const existingTx: OrderEvent | undefined = existingDoc?.events?.find(
-      (e: any) => e.orderId === orderId && (isCustom ? e.programId === programId : !e.programId),
+      (e: OrderEvent) => e.orderId === orderId && (isCustom ? e.programId === programId : !e.programId),
     );
 
     const cashbackAmount = existingTx?.issuedAmount ?? calculateCashbackAmount(program, mappedOrder);
@@ -610,7 +615,7 @@ export async function processDelayedCredits(
 
         console.log(`[+] Processing delayed credit for Order ${ev.orderName} (Program ${ev.programId})`);
 
-        const program = programs.find((p: any) => ev.programId ? (p.programId === ev.programId || p.id === ev.programId) : (!p.isFlowProgram && p.programType !== 'custom')) || programs[0];
+        const program = programs.find((p: ProgramSettings) => ev.programId ? (p.programId === ev.programId || p.id === ev.programId) : (!p.isFlowProgram && p.programType !== 'custom')) || programs[0];
         
         const expiresAt = ev.expiresAt?.toISOString() ?? calculateExpirationDate(program);
         const shouldNotify = ev.shouldNotify ?? !!program.notifyEmail;
@@ -629,7 +634,7 @@ export async function processDelayedCredits(
           ev.issuedAt = new Date();
           ev.expiresAt = expiresAt ? new Date(expiresAt) : null;
 
-          const arrayFilters: any[] = [{ 'elem.orderId': ev.orderId }];
+          const arrayFilters: Record<string, unknown>[] = [{ 'elem.orderId': ev.orderId }];
           if (ev.programId) {
             arrayFilters[0]['elem.programId'] = ev.programId;
           } else {
@@ -674,9 +679,9 @@ export async function processDelayedCredits(
         } else {
           ev.status = 'Failed';
           ev.emailStatus = 'Failed';
-          ev.emailFailReason = res?.userErrors?.map((e: any) => e.message).join(', ') ?? 'Failed';
+          ev.emailFailReason = res?.userErrors?.map((e: { message: string }) => e.message).join(', ') ?? 'Failed';
 
-          const arrayFilters: any[] = [{ 'elem.orderId': ev.orderId }];
+          const arrayFilters: Record<string, unknown>[] = [{ 'elem.orderId': ev.orderId }];
           if (ev.programId) {
             arrayFilters[0]['elem.programId'] = ev.programId;
           } else {

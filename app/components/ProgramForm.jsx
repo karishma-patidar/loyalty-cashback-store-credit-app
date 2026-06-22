@@ -1,4 +1,4 @@
-import React from "react";
+import PropTypes from "prop-types";
 import { ProgramNameCard } from "./program/ProgramNameCard.jsx";
 import { ProgramTypeCard } from "./program/ProgramTypeCard.jsx";
 import { ProgramSettingsCard } from "./program/ProgramSettingsCard.jsx";
@@ -38,10 +38,25 @@ export function ProgramForm({
       />
 
       {/* Cart Drawer Visibility */}
-      {/* <CartDrawerVisibilityCard
+      <CartDrawerVisibilityCard
         showCartDrawerPoints={showCartDrawerPoints}
         setShowCartDrawerPoints={setShowCartDrawerPoints}
-      /> */}
+      />
     </div>
   );
 }
+
+ProgramForm.propTypes = {
+  name: PropTypes.string.isRequired,
+  setName: PropTypes.func.isRequired,
+  programType: PropTypes.string.isRequired,
+  setProgramType: PropTypes.func.isRequired,
+  amountType: PropTypes.string.isRequired,
+  setAmountType: PropTypes.func.isRequired,
+  amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  setAmount: PropTypes.func.isRequired,
+  maxAmount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  setMaxAmount: PropTypes.func.isRequired,
+  showCartDrawerPoints: PropTypes.bool.isRequired,
+  setShowCartDrawerPoints: PropTypes.func.isRequired,
+};

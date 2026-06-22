@@ -109,7 +109,7 @@ export default function BulkAdjustForm({
   shopSubdomain,
 }) {
   const [adjustType, setAdjustType] = useState("Credit"); // "Credit" | "Debit"
-  const [notifyCustomers, setNotifyCustomers] = useState(false);
+  const [notifyCustomers, setNotifyCustomers] = useState(true);
 
   // CSV Preview & Confirmation States
   const [parsedData, setParsedData] = useState(null);
@@ -168,11 +168,11 @@ export default function BulkAdjustForm({
   };
 
   return (
-    <BlockStack gap="base">
+    <BlockStack gap="300">
       {/* Active Job Tracker */}
       {activeJob && (
         <Card>
-          <BlockStack gap="base">
+          <BlockStack gap="300">
             <InlineStack align="space-between">
               <Text variant="headingMd" as="h2">
                 Processing adjustments
@@ -198,7 +198,7 @@ export default function BulkAdjustForm({
             )}
 
             {activeJob.status === "Completed" && (
-              <BlockStack gap="base">
+              <BlockStack gap="400">
                 {activeJob.failedCount > 0 ? (
                   <Banner tone="warning" title="Some records failed validation or processing">
                     <p>
@@ -232,13 +232,13 @@ export default function BulkAdjustForm({
       {/* CSV Upload form card */}
       {!activeJob && (
         <Card>
-          <BlockStack gap="loose">
+          <BlockStack gap="300">
             {/* Adjustment Type - Stacked radio buttons */}
-            <BlockStack gap="tight">
+            <BlockStack gap="200">
               <Text variant="bodyMd" fontWeight="bold">
                 Adjustment type
               </Text>
-              <BlockStack gap="tight">
+              <BlockStack gap="50">
                 <RadioButton
                   label="Credit (+)"
                   checked={adjustType === "Credit"}
@@ -261,33 +261,35 @@ export default function BulkAdjustForm({
               </Button>
             </Box>
 
-            {/* Notification toggle with link */}
-            <BlockStack gap="base">
-              <Checkbox
-                label="Notify customers via Shopify notifications"
-                checked={notifyCustomers}
-                onChange={setNotifyCustomers}
-                disabled={isSubmitting}
-              />
-              <Box paddingInlineStart="6">
-                <Text tone="subdued" variant="bodySm">
-                  <Link url={`https://admin.shopify.com/store/${(() => {
-                    if (typeof window !== "undefined") {
-                      const params = new URLSearchParams(window.location.search);
-                      const shop = params.get("shop");
-                      if (shop) return shop.split(".")[0];
-                    }
-                    return shopSubdomain || "loyalty-store-credit";
-                  })()}/email_templates/store_credit_issued/preview`} target="_blank">
-                    Customize email content
-                  </Link>{" "}
-                  in Customer notifications.
-                </Text>
-              </Box>
-            </BlockStack>
+            {/* Notification toggle with link — hidden for Debit */}
+            {adjustType === "Credit" && (
+              <BlockStack gap="100">
+                <Checkbox
+                  label="Notify customers via Shopify notifications"
+                  checked={notifyCustomers}
+                  onChange={setNotifyCustomers}
+                  disabled={isSubmitting}
+                />
+                <Box paddingInlineStart="6">
+                  <Text tone="subdued" variant="bodySm">
+                    <Link url={`https://admin.shopify.com/store/${(() => {
+                      if (typeof window !== "undefined") {
+                        const params = new URLSearchParams(window.location.search);
+                        const shop = params.get("shop");
+                        if (shop) return shop.split(".")[0];
+                      }
+                      return shopSubdomain || "loyalty-store-credit";
+                    })()}/email_templates/store_credit_issued/preview`} target="_blank">
+                      Customize email content
+                    </Link>{" "}
+                    in Customer notifications.
+                  </Text>
+                </Box>
+              </BlockStack>
+            )}
 
             {/* Drag and Drop Zone */}
-            <BlockStack gap="tight">
+            <BlockStack gap="200">
               <Box style={{ height: "140px" }}>
                 <DropZone
                   accept=".csv"
@@ -300,7 +302,7 @@ export default function BulkAdjustForm({
                 </DropZone>
               </Box>
               {errorMessage && (
-                <Box paddingBlockStart="base">
+                <Box paddingBlockStart="400">
                   <Banner tone="critical" title={errorMessage} />
                 </Box>
               )}
@@ -308,11 +310,16 @@ export default function BulkAdjustForm({
 
             {/* CSV Data Preview */}
             {parsedData && (
-              <Box paddingBlockStart="base">
-                <BlockStack gap="base">
-                  <Text variant="headingMd" as="h3">
+              <BlockStack gap="0">
+                {/* Filename label — plain, sits flush above the table */}
+                <Box paddingBlockStart="200" paddingBlockEnd="100">
+                  <Text variant="bodyMd" fontWeight="semibold" as="p">
                     {fileName}
                   </Text>
+                </Box>
+
+                {/* Table */}
+                <div style={{ border: "1px solid var(--p-color-border, #e1e3e5)", borderRadius: "8px", overflow: "hidden" }}>
                   <IndexTable
                     resourceName={{ singular: "record", plural: "records" }}
                     itemCount={parsedData.length}
@@ -364,45 +371,51 @@ export default function BulkAdjustForm({
                     })()}
                   </IndexTable>
 
-                  {/* Pagination */}
+                  {/* Pagination — always show when data loaded, like the screenshot */}
                   {(() => {
                     const rowsPerPage = 5;
                     const totalPages = Math.ceil(parsedData.length / rowsPerPage);
-                    if (totalPages <= 1) return null;
                     return (
-                      <Box padding="base" style={{ display: "flex", justifyContent: "center" }}>
+                      <div style={{
+                        display: "flex",
+                        justifyContent: "center",
+                        padding: "8px 0",
+                        borderTop: "1px solid var(--p-color-border, #e1e3e5)",
+                      }}>
                         <Pagination
                           hasPrevious={currentPage > 1}
                           onPrevious={() => setCurrentPage(currentPage - 1)}
                           hasNext={currentPage < totalPages}
                           onNext={() => setCurrentPage(currentPage + 1)}
                         />
-                      </Box>
+                      </div>
                     );
                   })()}
+                </div>
 
-                  {/* Review Banner */}
-                  {(() => {
-                    const totalTransactions = parsedData.length;
-                    const uniqueEmails = new Set(
-                      parsedData.map((r) => r.email.trim().toLowerCase()).filter(Boolean)
-                    );
-                    const totalCustomers = uniqueEmails.size;
+                {/* Review Banner */}
+                {(() => {
+                  const totalTransactions = parsedData.length;
+                  const uniqueEmails = new Set(
+                    parsedData.map((r) => r.email.trim().toLowerCase()).filter(Boolean)
+                  );
+                  const totalCustomers = uniqueEmails.size;
 
-                    const currencySums = {};
-                    parsedData.forEach((r) => {
-                      const cur = r.currency.trim().toUpperCase() || "USD";
-                      const amt = Math.abs(parseFloat(r.amount)) || 0;
-                      currencySums[cur] = (currencySums[cur] || 0) + amt;
-                    });
+                  const currencySums = {};
+                  parsedData.forEach((r) => {
+                    const cur = r.currency.trim().toUpperCase() || "USD";
+                    const amt = Math.abs(parseFloat(r.amount)) || 0;
+                    currencySums[cur] = (currencySums[cur] || 0) + amt;
+                  });
 
-                    const totalAmountStr = Object.entries(currencySums)
-                      .map(([cur, sum]) => `${Number(sum.toFixed(2))} ${cur}`)
-                      .join(", ");
+                  const totalAmountStr = Object.entries(currencySums)
+                    .map(([cur, sum]) => `${Number(sum.toFixed(2))} ${cur}`)
+                    .join(", ");
 
-                    const isCredit = adjustType === "Credit";
+                  const isCredit = adjustType === "Credit";
 
-                    return (
+                  return (
+                    <Box paddingBlockStart="400">
                       <Banner tone="warning" title="Please review your data before proceeding:">
                         <List>
                           <List.Item>
@@ -419,23 +432,28 @@ export default function BulkAdjustForm({
                               {isCredit
                                 ? "Total store credit will be issued: "
                                 : "Total store credit will be deducted: "}
-                              {totalAmountStr || "0 USD"}
+                              <Text as="span" fontWeight="bold" tone={isCredit ? "success" : "critical"}>
+                                {totalAmountStr || "0 USD"}
+                              </Text>
                             </Text>
                           </List.Item>
                         </List>
                       </Banner>
-                    );
-                  })()}
+                    </Box>
+                  );
+                })()}
 
-                  {/* Apply Button */}
-                  <Box paddingBlockStart="base" style={{ display: "flex", justifyContent: "flex-end" }}>
-                    <Button variant="primary" onClick={() => setIsConfirmModalOpen(true)}>
+                {/* Apply Button — right-aligned */}
+                <Box paddingBlockStart="400">
+                  <InlineStack align="end">
+                    <Button variant="primary" onClick={() => setIsConfirmModalOpen(true)} disabled={isSubmitting}>
                       Apply
                     </Button>
-                  </Box>
-                </BlockStack>
-              </Box>
+                  </InlineStack>
+                </Box>
+              </BlockStack>
             )}
+
 
             {/* Confirmation Modal */}
             {isConfirmModalOpen && (

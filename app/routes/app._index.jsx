@@ -2,7 +2,6 @@
 import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher, useNavigate, useRouteError, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { syncMongoStoreSession } from "../db.mongodb.server";
 import { getStoreCreditMetrics } from "../services/storeCredit.server";
@@ -370,7 +369,6 @@ export default function Index() {
   const fetcher = useFetcher();
   const navigate = useNavigate();
   const navigation = useNavigation();
-  const shopify = useAppBridge();
 
   const isFetching = navigation.state === "loading";
   const [visible, setVisible] = useState({ calloutCard: true });
@@ -383,7 +381,6 @@ export default function Index() {
     : loaderData?.isActive !== false;
 
   const shopId = loaderData?.shopId;
-  const shopSubdomain = loaderData?.shopSubdomain;
   const hasPrograms = loaderData?.hasPrograms;
 
   const todayPerformance = loaderData?.todayPerformance || {
@@ -583,11 +580,19 @@ export default function Index() {
                             {idx > 0 && <s-divider />}
                             <s-box paddingBlockStart="small" paddingBlockEnd="small">
                               <div
+                                role="button"
+                                tabIndex={0}
                                 onClick={(e) => {
                                   if (e.target.closest("button")) {
                                     return;
                                   }
                                   setOpenStep(isExpanded ? null : step.id);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setOpenStep(isExpanded ? null : step.id);
+                                  }
                                 }}
                               >
                                 <s-grid gridTemplateColumns="auto 1fr auto" gap="base" alignItems="center">

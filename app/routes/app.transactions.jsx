@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useLoaderData, useSubmit, useNavigation } from "react-router";
+import { useLoaderData, useSubmit, useNavigation, useFetcher } from "react-router";
 import {
   Page,
   Layout,
@@ -27,26 +27,75 @@ import connectMongoDB, {
   syncMongoStoreSession,
   migrateShopData,
 } from "../db.mongodb.server";
+import db from "../db.server";
 
 // Helper to format date cleanly
 function formatDate(dateString) {
   if (!dateString) return "-";
   const date = new Date(dateString);
+  const currentYear = new Date().getFullYear();
+  const dateYear = date.getFullYear();
+
+  if (dateYear === currentYear) {
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } else {
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+}
+
+function formatDateOnly(dateInput) {
+  if (!dateInput) return "-";
+  const date = new Date(dateInput);
   return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
-// Loader to fetch logged database transactions for the merchant from MongoDB customer collections
-export async function loader({ request }) {
-  const { admin, session } = await authenticate.admin(request);
-  await syncMongoStoreSession(session);
-  const shop = session.shop;
+async function fetchAdjustmentTransactions(shop) {
+  let adjustments = [];
+  try {
+    adjustments = await db.creditAdjustment.findMany({
+      where: { shop },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (err) {
+    console.error("Error fetching credit adjustments in transactions loader:", err);
+  }
+  return adjustments.map(adj => ({
+    id: adj.id,
+    shop: adj.shop,
+    customerId: adj.customerId,
+    customerName: adj.customerName,
+    customerEmail: adj.customerEmail,
+    companyLocationId: adj.companyLocationId,
+    companyLocationName: adj.companyLocationName,
+    companyId: adj.companyId,
+    amount: adj.amount,
+    currency: adj.currency,
+    adjustmentType: adj.adjustmentType,
+    reason: adj.reason,
+    expirationDate: adj.expirationDate ? adj.expirationDate.toISOString() : null,
+    status: adj.status,
+    emailStatus: adj.emailStatus,
+    createdAt: adj.createdAt.toISOString(),
+    createdBy: adj.createdBy,
+  }));
+}
 
+async function fetchMongoTransactions(shop, admin, activeTabId = null) {
   // Process matured delayed store credits so they are up-to-date in the listing
   try {
     const { processDelayedCredits } =
@@ -58,9 +107,6 @@ export async function loader({ request }) {
       err,
     );
   }
-
-  const url = new URL(request.url);
-  const activeTabId = url.searchParams.get("tab") || "0"; // "0" for Cashback, "1" for Custom Program
 
   // Connect to MongoDB
   await connectMongoDB();
@@ -74,22 +120,30 @@ export async function loader({ request }) {
     console.error("Error fetching programs in transactions loader:", err);
   }
 
-  const allTransactions = [];
+  const cashback = [];
+  const custom = [];
 
   try {
     const ShopModel = getShopModel(shop);
     if (ShopModel) {
       await migrateShopData(shop);
-      // Removed Custom Program to Cashback migration to support Custom Program tab
     }
     const docs = ShopModel ? await ShopModel.find({}) : [];
 
     for (const doc of docs) {
       if (doc.events && Array.isArray(doc.events)) {
         for (const ev of doc.events) {
-          // Only push events that are in MongoDB (all events here are from MongoDB)
-          // Skip events with no orderId (corrupted data)
           if (!ev.orderId) continue;
+
+          // Skip manual credit adjustments so they are only shown in the Credit Adjustment tab (tab index 2)
+          if (
+            ev.programId === "credit-adjustment" ||
+            ev.programType === "credit_adjustment" ||
+            ev.programType === "debit_adjustment" ||
+            String(ev.orderId).startsWith("adj-")
+          ) {
+            continue;
+          }
 
           // Determine if custom program transaction
           let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
@@ -100,14 +154,7 @@ export async function loader({ request }) {
             }
           }
 
-          // Filter by tab type
-          if (activeTabId === "1") {
-            if (!isCustom) continue;
-          } else {
-            if (isCustom) continue;
-          }
-
-          allTransactions.push({
+          const txObj = {
             id: ev._id
               ? ev._id.toString()
               : String(ev.orderId || Math.random()),
@@ -132,7 +179,13 @@ export async function loader({ request }) {
             emailStatus: ev.emailStatus,
             emailFailReason: ev.emailFailReason || "",
             type: ev.programType || ev.type || "Cashback",
-          });
+          };
+
+          if (isCustom) {
+            custom.push(txObj);
+          } else {
+            cashback.push(txObj);
+          }
         }
       }
     }
@@ -140,26 +193,25 @@ export async function loader({ request }) {
     console.error("❌ Error querying store collection in loader:", err);
   }
 
-  // Sort combined results by createdAt descending
-  allTransactions.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
-
-  // Deduplicate by orderId
-  const uniqueTransactionsMap = new Map();
-  for (const tx of allTransactions) {
-    if (!tx.orderId) continue;
-    if (!uniqueTransactionsMap.has(tx.orderId)) {
-      uniqueTransactionsMap.set(tx.orderId, tx);
-    } else {
-      // If we already have this order, prefer 'Completed' over 'Pending'
-      const existing = uniqueTransactionsMap.get(tx.orderId);
-      if (tx.status === "Completed" && existing.status !== "Completed") {
-        uniqueTransactionsMap.set(tx.orderId, tx);
+  // Sort and deduplicate helper
+  const processList = (list) => {
+    list.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const uniqueMap = new Map();
+    for (const tx of list) {
+      if (!tx.orderId) continue;
+      if (!uniqueMap.has(tx.orderId)) {
+        uniqueMap.set(tx.orderId, tx);
+      } else {
+        const existing = uniqueMap.get(tx.orderId);
+        if (tx.status === "Completed" && existing.status !== "Completed") {
+          uniqueMap.set(tx.orderId, tx);
+        }
       }
     }
-  }
-  const uniqueTransactions = Array.from(uniqueTransactionsMap.values());
+    return Array.from(uniqueMap.values());
+  };
 
   let enableDelay = false;
   if (programs && programs.length > 0) {
@@ -167,9 +219,56 @@ export async function loader({ request }) {
     enableDelay = prog.enableDelay === true || prog.enableDelay === "true";
   }
 
+  if (activeTabId !== null) {
+    if (activeTabId === "1") {
+      return { cashback: [], custom: processList(custom), enableDelay };
+    } else {
+      return { cashback: processList(cashback), custom: [], enableDelay };
+    }
+  }
+
   return {
-    transactions: uniqueTransactions,
-    searchQuery: "",
+    cashback: processList(cashback),
+    custom: processList(custom),
+    enableDelay,
+  };
+}
+
+// Loader to fetch logged database transactions for the merchant from MongoDB customer collections
+export async function loader({ request }) {
+  const { admin, session } = await authenticate.admin(request);
+  await syncMongoStoreSession(session);
+  const shop = session.shop;
+
+  const url = new URL(request.url);
+  const activeTabId = url.searchParams.get("tab") || "0"; // "0" for Cashback, "1" for Custom Program, "2" for Credit Adjustment
+  const isRefresh = url.searchParams.get("refresh") === "true";
+
+  if (isRefresh) {
+    if (activeTabId === "2") {
+      const adjustments = await fetchAdjustmentTransactions(shop);
+      return {
+        tab: 2,
+        transactions: adjustments,
+      };
+    } else {
+      const { cashback, custom, enableDelay } = await fetchMongoTransactions(shop, admin, activeTabId);
+      return {
+        tab: parseInt(activeTabId, 10),
+        transactions: activeTabId === "1" ? custom : cashback,
+        enableDelay,
+      };
+    }
+  }
+
+  // Initial load: Fetch everything
+  const adjustments = await fetchAdjustmentTransactions(shop);
+  const { cashback, custom, enableDelay } = await fetchMongoTransactions(shop, admin);
+
+  return {
+    cashbackTransactions: cashback,
+    customTransactions: custom,
+    adjustmentTransactions: adjustments,
     activeTabId: parseInt(activeTabId, 10),
     shop,
     enableDelay,
@@ -213,6 +312,16 @@ export async function action({ request }) {
       for (const doc of docs) {
         if (doc.events && Array.isArray(doc.events)) {
           for (const ev of doc.events) {
+            // Skip manual credit adjustments so they are only shown in the Credit Adjustment tab (tab index 2)
+            if (
+              ev.programId === "credit-adjustment" ||
+              ev.programType === "credit_adjustment" ||
+              ev.programType === "debit_adjustment" ||
+              String(ev.orderId).startsWith("adj-")
+            ) {
+              continue;
+            }
+
             // Determine if custom program transaction
             let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
             if (ev.programId && programs.length > 0) {
@@ -396,9 +505,57 @@ export async function action({ request }) {
 }
 
 export default function Transactions() {
-  const { transactions, searchQuery, activeTabId, shop, enableDelay } = useLoaderData();
+  const loaderData = useLoaderData();
   const submit = useSubmit();
   const navigation = useNavigation();
+  const fetcher = useFetcher();
+
+  const [activeTabId, setActiveTabId] = useState(loaderData.activeTabId ?? 0);
+  const [cashbackData, setCashbackData] = useState(loaderData.cashbackTransactions || []);
+  const [customData, setCustomData] = useState(loaderData.customTransactions || []);
+  const [adjustmentData, setAdjustmentData] = useState(loaderData.adjustmentTransactions || []);
+  const [enableDelay, setEnableDelay] = useState(loaderData.enableDelay || false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    if (loaderData) {
+      if (loaderData.cashbackTransactions) setCashbackData(loaderData.cashbackTransactions);
+      if (loaderData.customTransactions) setCustomData(loaderData.customTransactions);
+      if (loaderData.adjustmentTransactions) setAdjustmentData(loaderData.adjustmentTransactions);
+      if (loaderData.enableDelay !== undefined) setEnableDelay(loaderData.enableDelay);
+    }
+  }, [loaderData]);
+
+  // Handle fetcher load completion (for refresh)
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data) {
+      const refreshedTab = fetcher.data.tab;
+      const refreshedTransactions = fetcher.data.transactions || [];
+      if (refreshedTab === 0) {
+        setCashbackData(refreshedTransactions);
+      } else if (refreshedTab === 1) {
+        setCustomData(refreshedTransactions);
+      } else if (refreshedTab === 2) {
+        setAdjustmentData(refreshedTransactions);
+      }
+      if (fetcher.data.enableDelay !== undefined) {
+        setEnableDelay(fetcher.data.enableDelay);
+      }
+      setIsRefreshing(false);
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  const shop = loaderData.shop || "";
+  const searchQuery = loaderData.searchQuery || "";
+
+  // Determine current active list of transactions based on activeTabId
+  const getTransactionsForActiveTab = () => {
+    if (activeTabId === 0) return cashbackData;
+    if (activeTabId === 1) return customData;
+    if (activeTabId === 2) return adjustmentData;
+    return [];
+  };
+  const transactions = getTransactionsForActiveTab();
 
   const [searchVal, setSearchVal] = useState(searchQuery);
   const [sortSelected, setSortSelected] = useState(["date desc"]);
@@ -431,9 +588,19 @@ export default function Transactions() {
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     } else if (sortValue === "amount desc") {
       // High to low
+      if (activeTabId === 2) {
+        const valA = a.adjustmentType === "Debit" ? -Number(a.amount) : Number(a.amount);
+        const valB = b.adjustmentType === "Debit" ? -Number(b.amount) : Number(b.amount);
+        return valB - valA;
+      }
       return Number(b.issuedAmount || b.redeemedAmount || 0) - Number(a.issuedAmount || a.redeemedAmount || 0);
     } else if (sortValue === "amount asc") {
       // Low to high
+      if (activeTabId === 2) {
+        const valA = a.adjustmentType === "Debit" ? -Number(a.amount) : Number(a.amount);
+        const valB = b.adjustmentType === "Debit" ? -Number(b.amount) : Number(b.amount);
+        return valA - valB;
+      }
       return Number(a.issuedAmount || a.redeemedAmount || 0) - Number(b.issuedAmount || b.redeemedAmount || 0);
     }
     return 0;
@@ -506,15 +673,31 @@ export default function Transactions() {
     // 3. Search Query Filter (Instant client-side evaluation)
     if (searchVal) {
       const q = searchVal.toLowerCase().trim();
-      const matches =
-        String(t.orderName || "")
-          .toLowerCase()
-          .includes(q) ||
-        String(t.customerName || "")
-          .toLowerCase()
-          .includes(q);
-      if (!matches) {
-        return false;
+      if (activeTabId === 2) {
+        const matches =
+          String(t.customerName || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(t.companyLocationName || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(t.reason || "")
+            .toLowerCase()
+            .includes(q);
+        if (!matches) {
+          return false;
+        }
+      } else {
+        const matches =
+          String(t.orderName || "")
+            .toLowerCase()
+            .includes(q) ||
+          String(t.customerName || "")
+            .toLowerCase()
+            .includes(q);
+        if (!matches) {
+          return false;
+        }
       }
     }
 
@@ -524,31 +707,20 @@ export default function Transactions() {
   const tabs = [
     { id: "0", content: "Cashback Program", index: 0 },
     { id: "1", content: "Custom Program", index: 1 },
+    { id: "2", content: "Credit Adjustment", index: 2 },
   ];
 
   const handleTabChange = useCallback(
     (selectedTabIndex) => {
-      const params = new URLSearchParams();
-      params.set("tab", String(selectedTabIndex));
-      submit(params, { method: "get", replace: true });
+      setActiveTabId(selectedTabIndex);
     },
-    [submit],
+    [],
   );
-
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  useEffect(() => {
-    if (navigation.state === "idle" && isRefreshing) {
-      setIsRefreshing(false);
-    }
-  }, [navigation.state, isRefreshing]);
 
   const handleRefresh = useCallback(() => {
     setIsRefreshing(true);
-    const params = new URLSearchParams();
-    params.set("tab", String(activeTabId));
-    submit(params, { method: "get", replace: true });
-  }, [activeTabId, submit]);
+    fetcher.load(`?tab=${activeTabId}&refresh=true`);
+  }, [activeTabId, fetcher]);
 
   const shopSubdomain = shop ? shop.split(".")[0] : "";
 
@@ -568,8 +740,84 @@ export default function Transactions() {
   );
 
   const rowMarkup = paginatedTransactions.map(
-    (
-      {
+    (tx, index) => {
+      if (activeTabId === 2) {
+        const isCredit = tx.adjustmentType === "Credit";
+        const ownerName = tx.customerId ? tx.customerName : tx.companyLocationName;
+
+        const cleanOwnerId = tx.customerId
+          ? tx.customerId.split("/").pop()
+          : tx.companyLocationId?.split("/").pop();
+
+        const cleanCompanyId = tx.companyId?.split("/").pop();
+
+        const ownerUrl = tx.customerId
+          ? `https://admin.shopify.com/store/${shopSubdomain}/customers/${cleanOwnerId}`
+          : cleanCompanyId
+          ? `https://admin.shopify.com/store/${shopSubdomain}/companies/${cleanCompanyId}/locations/${cleanOwnerId}`
+          : `https://admin.shopify.com/store/${shopSubdomain}/companies`;
+
+        return (
+          <IndexTable.Row
+            id={tx.id}
+            key={tx.id}
+            position={index}
+          >
+            {/* Customer / Company Location */}
+            <IndexTable.Cell>
+              <a
+                href={ownerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ab-link"
+              >
+                <Text variant="bodyMd" fontWeight="bold" as="span">
+                  {ownerName || "-"}
+                </Text>
+              </a>
+            </IndexTable.Cell>
+
+            {/* Adjusted Date */}
+            <IndexTable.Cell>{formatDate(tx.createdAt)}</IndexTable.Cell>
+
+            {/* Amount */}
+            <IndexTable.Cell>
+              <Text
+                variant="bodyMd"
+                fontWeight="bold"
+                as="span"
+                tone={isCredit ? "success" : "critical"}
+              >
+                {isCredit ? "+" : "-"}
+                {Number(tx.amount).toString()} {tx.currency}
+              </Text>
+            </IndexTable.Cell>
+
+            {/* Expiration Date */}
+            <IndexTable.Cell>
+              {tx.expirationDate ? formatDateOnly(tx.expirationDate) : "-"}
+            </IndexTable.Cell>
+
+            {/* Status */}
+            <IndexTable.Cell>
+              <Badge tone={tx.status === "Success" ? "success" : "critical"}>
+                {tx.status}
+              </Badge>
+            </IndexTable.Cell>
+
+            {/* Email Status */}
+            <IndexTable.Cell>
+              {tx.emailStatus && tx.emailStatus.trim() !== "" ? (
+                <Badge tone={tx.emailStatus === "Sent" ? "success" : "info"}>
+                  {tx.emailStatus}
+                </Badge>
+              ) : null}
+            </IndexTable.Cell>
+          </IndexTable.Row>
+        );
+      }
+
+      const {
         id,
         orderId,
         customerId,
@@ -584,9 +832,8 @@ export default function Transactions() {
         status,
         emailStatus,
         emailFailReason,
-      },
-      index,
-    ) => {
+      } = tx;
+
       const cleanCustomerId = customerId ? customerId.split("/").pop() : "";
       const orderUrl = `https://admin.shopify.com/store/${shopSubdomain}/orders/${orderId}`;
       const customerUrl = `https://admin.shopify.com/store/${shopSubdomain}/customers/${cleanCustomerId}`;
@@ -693,7 +940,7 @@ export default function Transactions() {
     },
   );
 
-  const isLoading = navigation.state === "loading" || isRefreshing;
+  const isLoading = navigation.state === "loading" || fetcher.state === "loading" || isRefreshing;
 
 
   const dateRangeChoices = [
@@ -708,13 +955,20 @@ export default function Transactions() {
     { label: "Month to date", value: "monthtodate" },
   ];
 
-  const statusChoices = [
-    { label: "Pending", value: "Pending" },
-    { label: "Cancelled", value: "Cancelled" },
-    { label: "Cancel Error", value: "Cancel Error" },
-    { label: "Failed", value: "Failed" },
-    { label: "Completed", value: "Completed" },
-  ];
+  const statusChoices = activeTabId === 2
+    ? [
+        { label: "Success", value: "Success" },
+        { label: "Failed", value: "Failed" },
+        { label: "Pending", value: "Pending" },
+        { label: "Processing", value: "Processing" },
+      ]
+    : [
+        { label: "Pending", value: "Pending" },
+        { label: "Cancelled", value: "Cancelled" },
+        { label: "Cancel Error", value: "Cancel Error" },
+        { label: "Failed", value: "Failed" },
+        { label: "Completed", value: "Completed" },
+      ];
 
   const filters = [
     {
@@ -837,57 +1091,66 @@ export default function Transactions() {
               </EmptyState>
             ) : (
               <>
-                <IndexFilters
-                  sortOptions={sortOptions}
-                  sortSelected={sortSelected}
-                  queryValue={searchVal}
-                  queryPlaceholder="Search by Order ID or Customer Name"
-                  onQueryChange={handleQueryValueChange}
-                  onQueryClear={handleQueryValueRemove}
-                  onSort={handleSortChange}
-                  tabs={tabs}
-                  selected={activeTabId}
-                  onSelect={handleTabChange}
-                  filters={filters}
-                  appliedFilters={appliedFilters}
-                  onClearAll={handleFiltersClearAll}
-                  cancelAction={{
-                    onAction: handleFiltersCancel,
-                  }}
-                  mode={mode}
-                  setMode={setMode}
-                  canCreateNewView={false}
-                />
-                {filteredTransactions.length === 0 ? (
-                  <Box padding="400">
-                    <EmptyState
-                      heading="No transactions found"
-                      image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
-                    >
-                      <p>
-                        There are currently no recorded store credit transactions
-                        matching this filter. Try changing your search query or
-                        clearing active filters.
-                      </p>
-                    </EmptyState>
-                  </Box>
-                ) : (
-                  <>
-                    <IndexTable
-                      resourceName={resourceName}
-                      itemCount={filteredTransactions.length}
-                      selectable={false}
-                      headings={[
-                        { title: "Order" },
-                        { title: "Created At" },
-                        { title: "Issued At" },
-                        { title: "Customer Name" },
-                        { title: "Earned/Issued" },
-                        { title: "Status" },
-                        { title: "Email Status" },
-                        { title: "Actions" },
-                      ]}
-                    >
+                 <IndexFilters
+                   sortOptions={sortOptions}
+                   sortSelected={sortSelected}
+                   queryValue={searchVal}
+                   queryPlaceholder={activeTabId === 2 ? "Search by customer name, location or reason" : "Search by Order ID or Customer Name"}
+                   onQueryChange={handleQueryValueChange}
+                   onQueryClear={handleQueryValueRemove}
+                   onSort={handleSortChange}
+                   tabs={tabs}
+                   selected={activeTabId}
+                   onSelect={handleTabChange}
+                   filters={filters}
+                   appliedFilters={appliedFilters}
+                   onClearAll={handleFiltersClearAll}
+                   cancelAction={{
+                     onAction: handleFiltersCancel,
+                   }}
+                   mode={mode}
+                   setMode={setMode}
+                   canCreateNewView={false}
+                 />
+                 {filteredTransactions.length === 0 ? (
+                   <Box padding="400">
+                     <EmptyState
+                       heading="No transactions found"
+                       image="https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png"
+                     >
+                       <p>
+                         There are currently no recorded store credit transactions
+                         matching this filter. Try changing your search query or
+                         clearing active filters.
+                       </p>
+                     </EmptyState>
+                   </Box>
+                 ) : (
+                   <>
+                     <IndexTable
+                       resourceName={resourceName}
+                       itemCount={filteredTransactions.length}
+                       selectable={false}
+                       headings={activeTabId === 2
+                         ? [
+                             { title: "Customer / Company Location" },
+                             { title: "Adjusted Date" },
+                             { title: "Amount" },
+                             { title: "Expiration Date" },
+                             { title: "Status" },
+                             { title: "Email Status" },
+                           ]
+                         : [
+                             { title: "Order" },
+                             { title: "Created At" },
+                             { title: "Issued At" },
+                             { title: "Customer Name" },
+                             { title: "Earned/Issued" },
+                             { title: "Status" },
+                             { title: "Email Status" },
+                             { title: "Actions" },
+                           ]}
+                     >
                       {rowMarkup}
                     </IndexTable>
                     {totalPages > 1 && (

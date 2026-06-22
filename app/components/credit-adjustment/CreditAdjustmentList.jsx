@@ -36,6 +36,12 @@ const CalendarIconSvg = () => (
   </svg>
 );
 
+const SearchIconSvg = () => (
+  <svg viewBox="0 0 20 20" style={{ width: "20px", height: "20px", fill: "var(--p-color-icon)" }}>
+    <path fillRule="evenodd" d="M12.186 13.247a6.5 6.5 0 1 1 1.06-1.061l3.525 3.524a.75.75 0 1 1-1.06 1.06l-3.525-3.523Zm-5.686-.747a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" clipRule="evenodd" />
+  </svg>
+);
+
 function nodeContainsDescendant(rootNode, descendant) {
   if (rootNode === descendant) {
     return true;
@@ -91,11 +97,28 @@ export default function CreditAdjustmentList({
   onRefresh,
   searchFetcher,
   isRefreshing,
+  isApplying = false,
 }) {
   const [searchVal, setSearchVal] = useState(searchQuery);
   const [typeFilter, setTypeFilter] = useState([filterType]);
   const [statusFilter, setStatusFilter] = useState([filterStatus]);
   const [sortSelectedVal, setSortSelectedVal] = useState([sortSelected]);
+
+  useEffect(() => {
+    setSearchVal(searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setTypeFilter([filterType]);
+  }, [filterType]);
+
+  useEffect(() => {
+    setStatusFilter([filterStatus]);
+  }, [filterStatus]);
+
+  useEffect(() => {
+    setSortSelectedVal([sortSelected]);
+  }, [sortSelected]);
 
   const { mode, setMode } = useSetIndexFiltersMode();
 
@@ -324,14 +347,29 @@ export default function CreditAdjustmentList({
   const isAmountValid = parseFloat(amountVal) > 0 && !isNaN(parseFloat(amountVal));
   const isReasonValid = reasonVal.trim().length > 0;
   const isDateValid = adjustType === "Debit" || expirationOption === "NoExpiration" || (expirationOption === "SetExpiration" && selectedDate !== null);
-  const isApplyDisabled = !isSelected || !isAmountValid || !isReasonValid || !isDateValid;
+
+  // Debit balance validation
+  const availableBalance = (() => {
+    if (!isSelected) return 0;
+    const selectedOwner = adjustFor === "Customer" ? selectedCustomer : selectedLocation;
+    return (selectedOwner?.balances && selectedOwner.balances[selectedCurrency]) || 0;
+  })();
+
+  const isDebitAmountInvalid = adjustType === "Debit" && isSelected && (parseFloat(amountVal) || 0) > availableBalance;
+
+  const amountError = isDebitAmountInvalid ? (
+    <BlockStack gap="100">
+=      <Text as="span">Available balance: {availableBalance} {selectedCurrency}.</Text>
+    </BlockStack>
+  ) : undefined;
+
+  const isApplyDisabled = !isSelected || !isAmountValid || !isReasonValid || !isDateValid || isDebitAmountInvalid;
 
   // Sorting Options
   const sortOptions = [
-    { label: "Date: Newest to oldest", value: "date-desc" },
-    { label: "Date: Oldest to newest", value: "date-asc" },
-    { label: "Amount: High to low", value: "amount-desc" },
-    { label: "Amount: Low to high", value: "amount-asc" },
+    { label: "Creation date", value: "date asc", directionLabel: "Earliest" },
+    { label: "Creation date", value: "date desc", directionLabel: "Latest" },
+   
   ];
 
   // Filters setup
@@ -397,106 +435,94 @@ export default function CreditAdjustmentList({
   const displayLocations = hasTypedLocation ? locationList : initialLocations;
 
   return (
-    <BlockStack gap="base">
+    <Box paddingBlockEnd="800">
+    <BlockStack gap="600">
       {/* Recent Bulk Adjustment Job Card */}
       {bulkJob && (() => {
         const isProcessing = bulkJob.status === "Processing" || bulkJob.status === "Pending";
+        const progressPct = bulkJob.totalRecords > 0
+          ? Math.round((bulkJob.processed / bulkJob.totalRecords) * 100)
+          : 0;
+
         if (isProcessing) {
           return (
             <Card>
-              <BlockStack gap="base">
-                <Text variant="headingMd" as="h2">
+              <BlockStack gap="300">
+                <Text variant="headingMd" as="h2" fontWeight="semibold">
                   Your bulk adjustment is being processed.
                 </Text>
-                <InlineStack gap="tight" blockAlign="center">
+                <InlineStack gap="100" blockAlign="center">
                   <Spinner size="small" />
-                  <Text variant="bodyMd" as="span">
+                  <Text variant="bodyMd" as="span" tone="subdued">
                     processing {bulkJob.totalRecords} transactions.
                   </Text>
                 </InlineStack>
                 <Banner tone="info">
-                  <p>
-                    This may take some time to complete, feel free to switch tabs and continue with other tasks.
-                  </p>
+                  <p>This may take some time to complete, feel free to switch tabs and continue with other tasks.</p>
                 </Banner>
               </BlockStack>
             </Card>
           );
         }
 
+        const downloadResults = () => {
+          if (!bulkJob?.resultsCsv) return;
+          const blob = new Blob([bulkJob.resultsCsv], { type: "text/csv" });
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `bulk_adjustment_results_${bulkJob.id}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        };
+
         return (
           <Card>
-            <BlockStack gap="base">
-              <InlineStack align="space-between">
-                <Text variant="headingMd" as="h2">
-                  Recent bulk adjustment
-                </Text>
-                {bulkJob.status === "Completed" && (
-                  <Badge tone="success">Completed</Badge>
-                )}
-                {bulkJob.status === "Failed" && (
-                  <Badge tone="critical">Failed</Badge>
-                )}
-              </InlineStack>
+            <BlockStack gap="300" >
+              <Text variant="headingMd" as="h2" fontWeight="semibold">
+                Recent bulk adjustment
+              </Text>
 
-              <Text variant="bodyMd" as="p">
+              <Text variant="bodyMd" as="p" tone="subdued">
                 {bulkJob.processed} of {bulkJob.totalRecords} transactions processed successfully on{" "}
                 {formatDate(bulkJob.updatedAt)}.
               </Text>
 
-              {bulkJob.status === "Completed" && bulkJob.failedCount > 0 && (
-                <Banner tone="warning" title="There were transaction errors due to invalid data or other issues">
-                  <p>
-                    Please review the transaction history for more details or click below to download your job results file.
-                  </p>
-                  <Box paddingBlockStart="base">
-                    <Button
-                      onClick={() => {
-                        if (!bulkJob?.resultsCsv) return;
-                        const blob = new Blob([bulkJob.resultsCsv], { type: "text/csv" });
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `bulk_adjustment_results_${bulkJob.id}.csv`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                      }}
-                    >
-                      Download results
-                    </Button>
-                  </Box>
-                </Banner>
-              )}
-
-              {bulkJob.status === "Completed" && bulkJob.failedCount === 0 && (
-                <Banner tone="success" title="Bulk adjustment completed successfully!">
-                  <p>All CSV records have been correctly processed and applied.</p>
-                  <Box paddingBlockStart="base">
-                    <Button
-                      onClick={() => {
-                        if (!bulkJob?.resultsCsv) return;
-                        const blob = new Blob([bulkJob.resultsCsv], { type: "text/csv" });
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `bulk_adjustment_results_${bulkJob.id}.csv`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                      }}
-                    >
-                      Download results
-                    </Button>
-                  </Box>
-                </Banner>
-              )}
+              {/* Green progress bar */}
+              <div
+                style={{
+                  width: "100%",
+                  height: "8px",
+                  borderRadius: "4px",
+                  backgroundColor: "var(--p-color-bg-fill-disabled, #e4e5e7)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${progressPct}%`,
+                    borderRadius: "4px",
+                    backgroundColor: bulkJob.status === "Failed"
+                      ? "var(--p-color-bg-fill-critical, #d72c0d)"
+                      : "var(--p-color-bg-fill-success, #008060)",
+                    transition: "width 0.4s ease",
+                  }}
+                />
+              </div>
 
               {bulkJob.status === "Failed" && (
-                <Banner tone="critical" title="Bulk adjustment job failed">
-                  <p>{bulkJob.errorMessage || "A critical system error occurred during processing."}</p>
-                </Banner>
+                <Text variant="bodySm" tone="critical">
+                  {bulkJob.errorMessage || "A critical error occurred during processing."}
+                </Text>
               )}
+
+              <div>
+                <Button onClick={downloadResults}>
+                  Download results
+                </Button>
+              </div>
             </BlockStack>
           </Card>
         );
@@ -527,7 +553,7 @@ export default function CreditAdjustmentList({
           setMode={setMode}
           sortOptions={sortOptions}
           sortSelected={sortSelectedVal}
-          onSortChange={handleSortChange}
+          onSort={handleSortChange}
           canCreateNewView={false}
         />
 
@@ -544,7 +570,7 @@ export default function CreditAdjustmentList({
             <p>Add manual adjustments to customer account balances or upload a CSV file in bulk.</p>
           </EmptyState>
         ) : (
-          <BlockStack gap="base">
+          <BlockStack gap="400">
             <IndexTable
               resourceName={{ singular: "adjustment", plural: "adjustments" }}
               itemCount={adjustments.length}
@@ -586,7 +612,7 @@ export default function CreditAdjustmentList({
                     <IndexTable.Cell>{formatDate(adj.createdAt)}</IndexTable.Cell>
                     <IndexTable.Cell>
                       <a href={ownerUrl} target="_blank" rel="noopener noreferrer">
-                        <Text variant="bodyMd" fontWeight="bold" as="span">
+                        <Text variant="bodyMd"  as="span">
                           {ownerName}
                         </Text>
                       </a>
@@ -594,7 +620,7 @@ export default function CreditAdjustmentList({
                     <IndexTable.Cell>
                       <Text
                         variant="bodyMd"
-                        fontWeight="bold"
+                       
                         as="span"
                         tone={isCredit ? "success" : "critical"}
                       >
@@ -624,7 +650,20 @@ export default function CreditAdjustmentList({
             </IndexTable>
 
             {totalPages > 1 && (
-              <Box padding="base" style={{ display: "flex", justifyContent: "center" }}>
+              <Box
+                padding="300"
+                style={{
+                  position: "sticky",
+                  bottom: 0,
+                  backgroundColor: "var(--p-color-bg-surface, #fff)",
+                  borderTop: "1px solid var(--p-color-border, #e1e3e5)",
+                  display: "flex",
+                  justifyContent: "center",
+                  zIndex: 10,
+                  borderBottomLeftRadius: "var(--p-border-radius-300, 8px)",
+                  borderBottomRightRadius: "var(--p-border-radius-300, 8px)",
+                }}
+              >
                 <Pagination
                   hasPrevious={currentPage > 1}
                   onPrevious={() => onPageChange(currentPage - 1)}
@@ -645,23 +684,25 @@ export default function CreditAdjustmentList({
         primaryAction={{
           content: "Apply",
           onAction: handleApply,
-          disabled: isApplyDisabled,
+          disabled: isApplyDisabled || isApplying,
+          loading: isApplying,
         }}
         secondaryActions={[
           {
             content: "Cancel",
             onAction: handleCloseModal,
+            disabled: isApplying,
           },
         ]}
       >
         <Modal.Section>
-          <BlockStack gap="base">
+          <BlockStack gap="500">
             {/* Adjustment Type */}
-            <BlockStack gap="tight">
-              <Text variant="bodyMd" fontWeight="bold">
+            <BlockStack gap="200">
+              <Text variant="bodyMd" >
                 Adjustment type
               </Text>
-              <BlockStack gap="tight">
+              <BlockStack gap="50">
                 <RadioButton
                   label="Credit (+)"
                   checked={adjustType === "Credit"}
@@ -676,11 +717,11 @@ export default function CreditAdjustmentList({
             </BlockStack>
 
             {/* Adjustment For */}
-            <BlockStack gap="tight">
-              <Text variant="bodyMd" fontWeight="bold">
+            <BlockStack gap="200">
+              <Text variant="bodyMd">
                 Adjustment for
               </Text>
-              <BlockStack gap="tight">
+              <BlockStack gap="50">
                 <RadioButton
                   label="Customer"
                   checked={adjustFor === "Customer"}
@@ -709,7 +750,7 @@ export default function CreditAdjustmentList({
             {/* Customer Search */}
             {adjustFor === "Customer" && (
               <div ref={customerContainerRef} style={{ position: "relative", zIndex: showCustomerDropdown ? 999 : 1 }}>
-                <BlockStack gap="tight">
+                <BlockStack gap="200">
                   <div
                     onClick={() => {
                       setSelectedCustomer(null);
@@ -720,6 +761,7 @@ export default function CreditAdjustmentList({
                     <TextField
                       label="Customer email"
                       value={customerSearchVal}
+                      prefix={<Icon source={SearchIconSvg} />}
                       onFocus={() => {
                         setSelectedCustomer(null);
                         setShowCustomerDropdown(true);
@@ -801,7 +843,7 @@ export default function CreditAdjustmentList({
             {/* Company Location Search */}
             {adjustFor === "CompanyLocation" && (
               <div ref={locationContainerRef} style={{ position: "relative", zIndex: showLocationDropdown ? 999 : 1 }}>
-                <BlockStack gap="tight">
+                <BlockStack gap="200">
                   <div
                     onClick={() => {
                       setSelectedLocation(null);
@@ -812,6 +854,7 @@ export default function CreditAdjustmentList({
                     <TextField
                       label="Company location"
                       value={locationSearchVal}
+                      prefix={<Icon source={SearchIconSvg} />}
                       onFocus={() => {
                         setSelectedLocation(null);
                         setShowLocationDropdown(true);
@@ -887,7 +930,7 @@ export default function CreditAdjustmentList({
               </div>
             )}
 
-            <InlineGrid columns={["oneThird", "twoThirds"]} gap="base">
+            <InlineGrid columns={["oneThird", "twoThirds"]} gap="400">
               <Select
                 label="Currency"
                 options={currencyOptions}
@@ -896,7 +939,7 @@ export default function CreditAdjustmentList({
               />
               <TextField
                 label="Amount"
-                type="number"
+                inputMode="decimal"
                 value={amountVal}
                 onChange={(val) => {
                   const clean = val.replace(/[^0-9.]/g, "");
@@ -911,6 +954,7 @@ export default function CreditAdjustmentList({
                 suffix={selectedCurrency}
                 placeholder="0.00"
                 autoComplete="off"
+                error={amountError}
               />
             </InlineGrid>
 
@@ -920,13 +964,13 @@ export default function CreditAdjustmentList({
               value={reasonVal}
               onChange={setReasonVal}
               placeholder="Enter reason for the adjustment"
-              multiline={3}
               autoComplete="off"
+              multiline={3}
             />
 
    {/* Notify customer */}
              {adjustType !== "Debit" && (
-               <BlockStack gap="tight">
+               <BlockStack gap="100">
                  <Checkbox
                    label="Notify customers via Shopify notifications"
                    checked={notifyCustomer}
@@ -952,11 +996,11 @@ export default function CreditAdjustmentList({
              
             {/* Expiration date options (Credits only) */}
             {adjustType === "Credit" && (
-              <BlockStack gap="tight">
+              <BlockStack gap="200">
                 <Text variant="bodyMd" fontWeight="bold">
                   Expiration date
                 </Text>
-                <BlockStack gap="tight">
+                <BlockStack gap="50">
                   <RadioButton
                     label="No expiration date"
                     checked={expirationOption === "NoExpiration"}
@@ -980,7 +1024,7 @@ export default function CreditAdjustmentList({
                 </BlockStack>
 
                 {expirationOption === "SetExpiration" && (
-                  <Box paddingBlockStart="tight">
+                  <Box paddingBlockStart="200">
                     <Popover
                       active={isCalendarOpen}
                       autofocusTarget="none"
@@ -1028,5 +1072,6 @@ export default function CreditAdjustmentList({
         <button id="trigger-single-modal-btn" onClick={handleOpenModal}>Trigger</button>
       </div>
     </BlockStack>
+    </Box>
   );
 }

@@ -320,7 +320,7 @@ export async function verifyAppEmbedEnabled(_admin: AdminClient): Promise<boolea
  * @param admin - Authenticated Shopify Admin client
  * @returns Array of store credit transaction nodes
  */
-export async function getStoreCreditTransactions(admin: AdminClient): Promise<any[]> {
+export async function getStoreCreditTransactions(admin: AdminClient): Promise<Record<string, unknown>[]> {
   const query = `#graphql
     query GetStoreCreditTransactions {
       storeCreditAccountTransactions(first: 250) {
@@ -355,7 +355,7 @@ export async function getStoreCreditTransactions(admin: AdminClient): Promise<an
   `;
   const response = await admin.graphql(query);
   const data = await response.json();
-  return data?.data?.storeCreditAccountTransactions?.edges?.map((edge: any) => edge.node) || [];
+  return data?.data?.storeCreditAccountTransactions?.edges?.map((edge: { node: Record<string, unknown> }) => edge.node) || [];
 }
 
 /**

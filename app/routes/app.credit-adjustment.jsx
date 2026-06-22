@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLoaderData, useSubmit, useFetcher, useRouteError, useNavigate } from "react-router";
+import { useLoaderData, useSubmit, useFetcher, useRouteError, useNavigate, useNavigation } from "react-router";
 import { Page } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -69,9 +69,9 @@ export const loader = async ({ request }) => {
   const searchQuery = url.searchParams.get("query") || "";
   const filterType = url.searchParams.get("type") || "all";
   const filterStatus = url.searchParams.get("status") || "all";
-  const sortSelected = url.searchParams.get("sort") || "date-desc";
+  const sortSelected = url.searchParams.get("sort") || "date desc";
   const currentPage = parseInt(url.searchParams.get("page") || "1", 10);
-  const pageSize = 8;
+  const pageSize = 10;
 
   const where = { shop };
   if (searchQuery) {
@@ -92,11 +92,13 @@ export const loader = async ({ request }) => {
   }
 
   let orderBy = { createdAt: "desc" };
-  if (sortSelected === "date-asc") {
+  if (sortSelected === "date-asc" || sortSelected === "date asc") {
     orderBy = { createdAt: "asc" };
-  } else if (sortSelected === "amount-desc") {
+  } else if (sortSelected === "date-desc" || sortSelected === "date desc") {
+    orderBy = { createdAt: "desc" };
+  } else if (sortSelected === "amount-desc" || sortSelected === "amount desc") {
     orderBy = { amount: "desc" };
-  } else if (sortSelected === "amount-asc") {
+  } else if (sortSelected === "amount-asc" || sortSelected === "amount asc") {
     orderBy = { amount: "asc" };
   }
 
@@ -211,7 +213,8 @@ export default function CreditAdjustmentListing() {
     setCurrentPageState(currentPage);
   }, [adjustments, totalPages, currentPage]);
 
-  const isRefreshing = refreshFetcher.state !== "idle";
+  const navigation = useNavigation();
+  const isRefreshing = refreshFetcher.state !== "idle" || navigation.state === "loading";
 
   useEffect(() => {
     if (refreshFetcher.state === "idle" && refreshFetcher.data) {
@@ -325,7 +328,7 @@ export default function CreditAdjustmentListing() {
     const searchVal = params.get("query") || "";
     const typeFilter = params.get("type") || "all";
     const statusFilter = params.get("status") || "all";
-    const sortSelectedVal = params.get("sort") || "date-desc";
+    const sortSelectedVal = params.get("sort") || "date desc";
 
     const payload = {
       actionType: "export",
@@ -411,6 +414,7 @@ export default function CreditAdjustmentListing() {
         onRefresh={handleRefresh}
         searchFetcher={searchFetcher}
         isRefreshing={isRefreshing}
+        isApplying={fetcher.state !== "idle"}
       />
     </Page>
   );
