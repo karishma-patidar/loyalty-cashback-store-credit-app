@@ -1,3 +1,4 @@
+/* global process */
 import { useState, useEffect } from "react";
 import { useLoaderData, useFetcher, useNavigate, useRouteError, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -7,6 +8,7 @@ import { syncMongoStoreSession } from "../db.mongodb.server";
 import { getStoreCreditMetrics } from "../services/storeCredit.server";
 import { MetricCell } from "../components/MetricCell";
 import { useExtensionStatuses } from "../hooks/useExtensionStatuses";
+import InstalledApps from "../components/otherapp/InstalledApps";
 
 // ─── GraphQL Queries ───────────────────────────────────────────────────────────
 
@@ -744,6 +746,9 @@ export default function Index() {
             </s-section>
           )}
 
+         
+            <InstalledApps />
+         
         </s-stack>
       </s-box>
     </s-page>

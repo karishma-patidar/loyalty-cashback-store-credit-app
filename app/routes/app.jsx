@@ -57,6 +57,7 @@ export default function App() {
         {onboardingCompleted && (
           <s-app-nav>
             <s-link href="/app/programs">Programs</s-link>
+            <s-link href="/app/credit-adjustment">Credit adjustment</s-link>
             <s-link href="/app/settings">Settings</s-link>
             <s-link href="/app/transactions">Transactions</s-link>
             <s-link href="/app/analytics">Analytics</s-link>

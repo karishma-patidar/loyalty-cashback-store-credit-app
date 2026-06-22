@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useExtensionStatuses } from "../../hooks/useExtensionStatuses";
@@ -45,7 +46,7 @@ const WIDGETS = [
   {
     id: "credit-history",
     title: "Store credit history",
-    category: "Custom Program",
+    category: "Cashback",
     placement: "Profile Page",
     badgeTone: "info",
     description: "Display store credit history to let customers track credit balance and transactions.",
@@ -56,22 +57,9 @@ const WIDGETS = [
     ),
   },
   {
-    id: "custom-program-promo",
-    title: "Custom program promotion",
-    category: "Custom Program",
-    placement: "Pre-checkout Pages",
-    badgeTone: "info",
-    description: "Promote your custom programs across any pre-checkout page to capture customer attention and drive engagement.",
-    templateTarget: "collection",
-    blockHandle: "credit_block",
-    previewSvg: (
-      <img src="https://cdn.getkoin.io/portal/widget-cart-promotion.png" alt="Custom program promotion preview" className="w-full h-full object-contain" />
-    ),
-  },
-  {
     id: "checkout-widget",
     title: "Checkout widget",
-    category: "Cashback",
+    category: "Custom Program",
     placement: "Checkout Page",
     badgeTone: "info",
     description: "Show campaign promotion message and store credit balance on the checkout page to drive engagement and repeat purchases.",
@@ -119,9 +107,9 @@ export default function WidgetsTab({ loaderData }) {
   };
 
   const categoryTabs = [
-    { id: 0, label: "All (6)" },
-    { id: 1, label: "Cashback (4)" },
-    { id: 2, label: "Custom Program (2)" },
+    { id: 0, label: `All (${WIDGETS.length})` },
+    { id: 1, label: `Cashback (${WIDGETS.filter(w => w.category === "Cashback").length})` },
+    { id: 2, label: `Custom Program (${WIDGETS.filter(w => w.category === "Custom Program").length})` },
   ];
 
   const filteredWidgets = WIDGETS.filter((w) => {

@@ -78,3 +78,39 @@ model Transaction {
   createdAt    DateTime @default(now())
   issuedAt     DateTime @default(now())
 }
+
+model CreditAdjustment {
+  id                  String    @id @default(uuid())
+  shop                String
+  customerId          String?
+  customerName        String?
+  customerEmail       String?
+  companyLocationId   String?
+  companyLocationName String?
+  companyId           String?
+  amount              Float
+  currency            String
+  adjustmentType      String    // "Credit" or "Debit"
+  reason              String
+  expirationDate      DateTime?
+  status              String    // "Success", "Failed", "Pending", "Processing"
+  emailStatus         String    // "Sent", "Failed", "Not Sent"
+  createdAt           DateTime  @default(now())
+  createdBy           String
+}
+
+model BulkAdjustmentJob {
+  id             String   @id @default(uuid())
+  shop           String
+  adjustmentType String   // "Credit" or "Debit"
+  status         String   // "Processing", "Completed", "Failed"
+  totalRecords   Int      @default(0)
+  processed      Int      @default(0)
+  successCount   Int      @default(0)
+  failedCount    Int      @default(0)
+  errorMessage   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  resultsCsv     String?  // results in format: email,status,message
+}
+

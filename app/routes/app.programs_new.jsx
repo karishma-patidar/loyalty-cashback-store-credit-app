@@ -341,7 +341,7 @@ export default function NewProgram() {
       startDate,
       startTime,
       showCartDrawerPoints,
-      issued: "0 INR",
+      issued: initialProgram?.issued || "0 INR",
       budget: "Unlimited",
     };
 

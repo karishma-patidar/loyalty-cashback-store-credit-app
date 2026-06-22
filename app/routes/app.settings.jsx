@@ -1,3 +1,4 @@
+/* global process */
 import { useState, useCallback } from "react";
 import { useLoaderData, useRouteError } from "react-router";
 import { Page, Tabs } from "@shopify/polaris";
@@ -46,17 +47,6 @@ const SET_METAFIELDS_MUTATION = `#graphql
     }
   }
 `;
-
-const DELETE_METAFIELDS_MUTATION = `#graphql
-  mutation DeleteMetafields($metafields: [MetafieldIdentifierInput!]!) {
-    metafieldsDelete(metafields: $metafields) {
-      userErrors {
-        message
-      }
-    }
-  }
-`;
-
 // ─── Loader & Action ───────────────────────────────────────────────────────────
 
 export async function loader({ request }) {

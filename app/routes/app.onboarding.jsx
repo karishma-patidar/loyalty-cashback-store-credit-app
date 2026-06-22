@@ -129,10 +129,10 @@ export async function action({ request }) {
 
       const { shopId, programs } = await getShopPrograms(admin);
 
-      let updatedPrograms = [];
+      let updatedPrograms = [...programs];
       if (programs.length > 0) {
         programData.id = programs[0].id;
-        updatedPrograms = [programData];
+        updatedPrograms[0] = programData;
       } else {
         updatedPrograms = [programData];
       }

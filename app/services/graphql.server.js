@@ -3,7 +3,7 @@
  * Location: app/services/graphql.server.js
  */
 
-import { connectLoyaltyDB, getFlowProgramModel } from "../db.mongodb.server.js";
+import { connectLoyaltyDB, getFlowProgramModel, connectMongoDB, getShopModel } from "../db.mongodb.server.js";
 
 /**
  * Fetch the Shop ID and the list of loyalty/cashback programs from Shopify metafields.
@@ -75,6 +75,111 @@ export async function setShopPrograms(admin, shopId, programs) {
     // Ignore if already created
   }
 
+  // ==== CALCULATE ISSUED AMOUNT FROM MONGODB ====
+  let shopDomain = null;
+  let shopCurrency = "USD";
+  try {
+    const shopQuery = `
+      query {
+        shop {
+          myshopifyDomain
+          currencyCode
+        }
+      }
+    `;
+    const shopRes = await admin.graphql(shopQuery);
+    const shopData = await shopRes.json();
+    shopDomain = shopData?.data?.shop?.myshopifyDomain;
+    shopCurrency = shopData?.data?.shop?.currencyCode || "USD";
+  } catch (err) {
+    console.error("Error fetching shop data in setShopPrograms:", err);
+  }
+
+  if (shopDomain) {
+    try {
+      await connectMongoDB();
+      const ShopModel = getShopModel(shopDomain);
+      const docs = ShopModel ? await ShopModel.find({}) : [];
+
+      // Determine unique currencies in MongoDB
+      const allEvents = [];
+      for (const doc of docs) {
+        if (doc.events && Array.isArray(doc.events)) {
+          allEvents.push(...doc.events);
+        }
+      }
+      const mongoCurrencies = Array.from(new Set(allEvents.map(e => e.currency))).filter(Boolean);
+      const isSingleCurrency = mongoCurrencies.length <= 1;
+      const activeCurrency = (isSingleCurrency && mongoCurrencies.length === 1) ? mongoCurrencies[0] : shopCurrency;
+
+      // Identify the "first" program of each category to absorb old legacy events
+      const firstCashbackProg = programs.find(p => p.programType !== "custom" && !p.isFlowProgram);
+      const firstCustomProg = programs.find(p => p.programType === "custom" || p.isFlowProgram);
+
+      const currencySymbols = {
+        INR: "₹",
+        USD: "$",
+        CAD: "C$",
+        AUD: "A$",
+        GBP: "£",
+        EUR: "€",
+        JPY: "¥",
+      };
+
+      const formatCurrencyLocal = (amount, currencyCode) => {
+        const symbol = currencySymbols[currencyCode] || currencyCode || "$";
+        const formatted = Number(amount || 0).toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        return `${symbol}${formatted} ${currencyCode || "USD"}`;
+      };
+
+      for (const prog of programs) {
+        let totalIssued = 0;
+        const progId = prog.programId || prog.id;
+
+        for (const doc of docs) {
+          if (doc.events && Array.isArray(doc.events)) {
+            for (const ev of doc.events) {
+              if (ev.status === "Completed") {
+                const evCurrency = ev.currency || shopCurrency;
+
+                // Discard other currencies if MongoDB contains multiple currencies
+                if (!isSingleCurrency && evCurrency !== shopCurrency) {
+                  continue;
+                }
+
+                let amountVal = Number(ev.issuedAmount || 0);
+
+                if (ev.programId) {
+                  // Precise matching for new events
+                  if (ev.programId === progId) {
+                    totalIssued += amountVal;
+                  }
+                } else {
+                  // Fallback for old events that lack a programId
+                  const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
+                  const isProgCustom = prog.programType === "custom" || prog.isFlowProgram;
+
+                  if (isProgCustom && evIsCustom && prog.id === firstCustomProg?.id) {
+                    totalIssued += amountVal;
+                  } else if (!isProgCustom && !evIsCustom && prog.id === firstCashbackProg?.id) {
+                    totalIssued += amountVal;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        prog.issued = formatCurrencyLocal(totalIssued, activeCurrency);
+      }
+    } catch (err) {
+      console.error("Error calculating dynamic program issued amounts in setShopPrograms:", err);
+    }
+  }
+
   const mutation = `
     mutation SetPrograms($metafields: [MetafieldsSetInput!]!) {
       metafieldsSet(metafields: $metafields) {
@@ -108,18 +213,6 @@ export async function setShopPrograms(admin, shopId, programs) {
 
   // ==== SYNC TO MONGODB ====
   try {
-    // 1. Fetch shop domain for MongoDB
-    const shopQuery = `
-      query {
-        shop {
-          myshopifyDomain
-        }
-      }
-    `;
-    const shopRes = await admin.graphql(shopQuery);
-    const shopData = await shopRes.json();
-    const shopDomain = shopData?.data?.shop?.myshopifyDomain;
-
     if (shopDomain) {
       await connectLoyaltyDB();
       const FlowProgramModel = getFlowProgramModel();
