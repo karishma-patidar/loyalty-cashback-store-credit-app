@@ -371,7 +371,6 @@ export default function CreditAdjustmentListing() {
           disabled: isRefreshing,
           loading: isRefreshing,
         },
-        { content: "Create automation", disabled: true },
       ]}
       actionGroups={[
         {

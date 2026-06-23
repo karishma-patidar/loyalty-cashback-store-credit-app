@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { useLoaderData, useSubmit, useNavigation, useFetcher } from "react-router";
+import { useLoaderData, useNavigation, useFetcher } from "react-router";
 import {
   Page,
   Layout,
@@ -11,7 +11,6 @@ import {
   Box,
   EmptyState,
   Modal,
-  DescriptionList,
   Pagination,
   Tooltip,
   IndexFilters,
@@ -20,7 +19,11 @@ import {
   Badge,
   useSetIndexFiltersMode,
   IndexFiltersMode,
+  TextField,
+  Icon,
 } from "@shopify/polaris";
+import { ChatIcon } from "@shopify/polaris-icons";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import connectMongoDB, {
   getShopModel,
@@ -179,6 +182,7 @@ async function fetchMongoTransactions(shop, admin, activeTabId = null) {
             emailStatus: ev.emailStatus,
             emailFailReason: ev.emailFailReason || "",
             type: ev.programType || ev.type || "Cashback",
+            cancellationReason: ev.cancellationReason || "",
           };
 
           if (isCustom) {
@@ -282,6 +286,56 @@ export async function action({ request }) {
 
   const formData = await request.formData();
   const actionType = formData.get("actionType");
+
+  if (actionType === "cancel") {
+    const transactionId = formData.get("transactionId");
+    const reason = formData.get("reason") || "";
+
+    if (!transactionId) {
+      return Response.json({ success: false, error: "Missing transaction ID." });
+    }
+
+    try {
+      await connectMongoDB();
+      const ShopModel = getShopModel(shop);
+      if (!ShopModel) {
+        return Response.json({ success: false, error: "Database model not found." });
+      }
+
+      // Update in MongoDB
+      const result = await ShopModel.updateOne(
+        { "events._id": transactionId },
+        {
+          $set: {
+            "events.$.status": "Cancelled",
+            "events.$.cancellationReason": reason,
+            "events.$.cancelledAt": new Date()
+          }
+        },
+        { strict: false }
+      );
+
+      if (result.matchedCount === 0) {
+        // Fallback to query by orderId
+        await ShopModel.updateOne(
+          { "events.orderId": transactionId },
+          {
+            $set: {
+              "events.$.status": "Cancelled",
+              "events.$.cancellationReason": reason,
+              "events.$.cancelledAt": new Date()
+            }
+          },
+          { strict: false }
+        );
+      }
+
+      return Response.json({ success: true, transactionId });
+    } catch (err) {
+      console.error("Error cancelling transaction:", err);
+      return Response.json({ success: false, error: err.message });
+    }
+  }
 
   if (actionType === "export") {
     const tab = formData.get("tab") || "0";
@@ -505,10 +559,11 @@ export async function action({ request }) {
 }
 
 export default function Transactions() {
+  const shopify = useAppBridge();
   const loaderData = useLoaderData();
-  const submit = useSubmit();
   const navigation = useNavigation();
   const fetcher = useFetcher();
+  const cancelFetcher = useFetcher();
 
   const [activeTabId, setActiveTabId] = useState(loaderData.activeTabId ?? 0);
   const [cashbackData, setCashbackData] = useState(loaderData.cashbackTransactions || []);
@@ -517,10 +572,67 @@ export default function Transactions() {
   const [enableDelay, setEnableDelay] = useState(loaderData.enableDelay || false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // States for cancellation modal
+  const [isCancelOpen, setIsCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancellingTransaction, setCancellingTransaction] = useState(null);
+
+  // States for viewing cancellation reason modal
+  const [isReasonOpen, setIsReasonOpen] = useState(false);
+  const [selectedReason, setSelectedReason] = useState("");
+
+  // Handle cancelFetcher completion
+  useEffect(() => {
+    if (cancelFetcher.state === "idle" && cancelFetcher.data) {
+      if (cancelFetcher.data.success && cancellingTransaction && cancelFetcher.data.transactionId === cancellingTransaction.id) {
+        const targetId = cancellingTransaction.id;
+        const enteredReason = cancelReason;
+
+        const updateList = (list) =>
+          list.map((tx) =>
+            tx.id === targetId
+              ? { ...tx, status: "Cancelled", cancellationReason: enteredReason }
+              : tx
+          );
+
+        setCashbackData((prev) => updateList(prev));
+        setCustomData((prev) => updateList(prev));
+
+        // Reset states
+        setCancellingTransaction(null);
+        setCancelReason("");
+        setIsCancelOpen(false);
+        shopify.toast.show("Transaction cancelled successfully");
+      } else if (cancelFetcher.data.error) {
+        shopify.toast.show(cancelFetcher.data.error, { isError: true });
+      }
+    }
+  }, [cancelFetcher.state, cancelFetcher.data, cancellingTransaction, cancelReason, shopify]);
+
   useEffect(() => {
     if (loaderData) {
-      if (loaderData.cashbackTransactions) setCashbackData(loaderData.cashbackTransactions);
-      if (loaderData.customTransactions) setCustomData(loaderData.customTransactions);
+      if (loaderData.cashbackTransactions) {
+        setCashbackData((prev) => {
+          return loaderData.cashbackTransactions.map((newTx) => {
+            const existingTx = prev.find((t) => t.id === newTx.id);
+            if (existingTx && existingTx.status === "Cancelled" && existingTx.cancellationReason && !newTx.cancellationReason) {
+              return { ...newTx, cancellationReason: existingTx.cancellationReason };
+            }
+            return newTx;
+          });
+        });
+      }
+      if (loaderData.customTransactions) {
+        setCustomData((prev) => {
+          return loaderData.customTransactions.map((newTx) => {
+            const existingTx = prev.find((t) => t.id === newTx.id);
+            if (existingTx && existingTx.status === "Cancelled" && existingTx.cancellationReason && !newTx.cancellationReason) {
+              return { ...newTx, cancellationReason: existingTx.cancellationReason };
+            }
+            return newTx;
+          });
+        });
+      }
       if (loaderData.adjustmentTransactions) setAdjustmentData(loaderData.adjustmentTransactions);
       if (loaderData.enableDelay !== undefined) setEnableDelay(loaderData.enableDelay);
     }
@@ -565,9 +677,6 @@ export default function Transactions() {
   const [filterDate, setFilterDate] = useState("all"); // "all", "today", "yesterday", "7days", "30days"
 
   const { mode, setMode } = useSetIndexFiltersMode();
-
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState(null);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -722,6 +831,19 @@ export default function Transactions() {
     fetcher.load(`?tab=${activeTabId}&refresh=true`);
   }, [activeTabId, fetcher]);
 
+  const handleConfirmCancel = useCallback(() => {
+    if (!cancellingTransaction || !cancelReason.trim()) return;
+
+    cancelFetcher.submit(
+      {
+        actionType: "cancel",
+        transactionId: cancellingTransaction.id,
+        reason: cancelReason.trim(),
+      },
+      { method: "post" }
+    );
+  }, [cancellingTransaction, cancelReason, cancelFetcher]);
+
   const shopSubdomain = shop ? shop.split(".")[0] : "";
 
   // Calculate Pagination Data
@@ -824,14 +946,12 @@ export default function Transactions() {
         orderName,
         createdAt,
         issuedAt,
-        processAt,
         customerName,
         issuedAmount,
-        redeemedAmount,
         currency,
         status,
         emailStatus,
-        emailFailReason,
+        cancellationReason,
       } = tx;
 
       const cleanCustomerId = customerId ? customerId.split("/").pop() : "";
@@ -871,9 +991,11 @@ export default function Transactions() {
             </a>
           </IndexTable.Cell>
           <IndexTable.Cell>
-            <Text variant="bodyMd" fontWeight="bold" as="span" tone={issuedAmount > 0 ? "success" : undefined}>
-              {issuedAmount > 0 ? `+${Number(issuedAmount).toFixed(2)}` : "-"} {currency}
-            </Text>
+            <span style={status === "Cancelled" ? { opacity: 0.5 } : undefined}>
+              <Text variant="bodyMd" fontWeight="bold" as="span" tone={status === "Cancelled" ? "subdued" : (issuedAmount > 0 ? "success" : undefined)}>
+                {issuedAmount > 0 ? `+${Number(issuedAmount).toFixed(2)}` : "-"} {currency}
+              </Text>
+            </span>
           </IndexTable.Cell>
           <IndexTable.Cell>
             {status === "Pending" ? (
@@ -908,32 +1030,39 @@ export default function Transactions() {
             </Badge>
           </IndexTable.Cell>
           <IndexTable.Cell>
-            <Button
-              variant="plain"
-              onClick={() => {
-                setSelectedTransaction({
-                  id,
-                  orderId,
-                  customerId,
-                  orderName,
-                  createdAt,
-                  issuedAt,
-                  processAt,
-                  customerName,
-                  issuedAmount,
-                  redeemedAmount,
-                  currency,
-                  status,
-                  emailStatus,
-                  emailFailReason,
-                  orderUrl,
-                  customerUrl,
-                });
-                setIsDetailsOpen(true);
-              }}
-            >
-              View Details
-            </Button>
+            {status === "Pending" ? (
+              <Button
+                variant="plain"
+                onClick={() => {
+                  setCancellingTransaction(tx);
+                  setIsCancelOpen(true);
+                }}
+              >
+                <div style={{ display: "inline-flex", color: "var(--p-color-text-critical)" }}>
+                  <svg
+                    viewBox="0 0 20 20"
+                    style={{ width: "20px", height: "20px", fill: "none", stroke: "currentColor", strokeWidth: "2" }}
+                  >
+                    <circle cx="10" cy="10" r="8" />
+                    <line x1="4.35" y1="4.35" x2="15.65" y2="15.65" />
+                  </svg>
+                </div>
+              </Button>
+            ) : status === "Cancelled" ? (
+              <Tooltip content="Reason">
+                <Button
+                  variant="plain"
+                  onClick={() => {
+                    setSelectedReason(cancellationReason || "N/A");
+                    setIsReasonOpen(true);
+                  }}
+                >
+                  <div style={{ display: "inline-flex", color: "var(--p-color-icon-secondary)" }}>
+                    <Icon source={ChatIcon} />
+                  </div>
+                </Button>
+              </Tooltip>
+            ) : null}
           </IndexTable.Cell>
         </IndexTable.Row>
       );
@@ -1174,140 +1303,70 @@ export default function Transactions() {
         </Layout.Section>
       </Layout>
 
-      {selectedTransaction && (
-        <Modal
-          open={isDetailsOpen}
-          onClose={() => setIsDetailsOpen(false)}
-          title="Store Credit Transaction Details"
-          primaryAction={{
+      {/* Cancel Confirmation Modal */}
+      <Modal
+        open={isCancelOpen}
+        onClose={() => {
+          setIsCancelOpen(false);
+          setCancelReason("");
+          setCancellingTransaction(null);
+        }}
+        title="Are you sure you want to cancel this transaction?"
+        primaryAction={{
+          content: "Cancel transaction",
+          destructive: true,
+          onAction: handleConfirmCancel,
+          disabled: !cancelReason.trim() || cancelFetcher.state !== "idle",
+          loading: cancelFetcher.state !== "idle",
+        }}
+        secondaryActions={[
+          {
             content: "Close",
-            onAction: () => setIsDetailsOpen(false),
-          }}
-        >
-          <Modal.Section>
-            <BlockStack gap="400">
-              <DescriptionList
-                items={[
-                  {
-                    term: "Transaction ID",
-                    description: (
-                      <Text variant="bodyMd" fontWeight="semibold">
-                        {selectedTransaction.id}
-                      </Text>
-                    ),
-                  },
-                  {
-                    term: "Associated Order",
-                    description: (
-                      <a
-                        href={selectedTransaction.orderUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ab-link"
-                      >
-                        <strong>{selectedTransaction.orderName}</strong>
-                      </a>
-                    ),
-                  },
-                  {
-                    term: "Customer Profile",
-                    description: (
-                      <a
-                        href={selectedTransaction.customerUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ab-link"
-                      >
-                        {selectedTransaction.customerName}
-                      </a>
-                    ),
-                  },
-                  {
-                    term: "Store Credit Issued",
-                    description: (
-                      <Text variant="bodyMd" fontWeight="bold" tone="success">
-                        {Number(selectedTransaction.issuedAmount || 0).toFixed(2)}{" "}
-                        {selectedTransaction.currency}
-                      </Text>
-                    ),
-                  },
-                  {
-                    term: "Store Credit Redeemed",
-                    description: (
-                      <Text variant="bodyMd" fontWeight="bold" tone="critical">
-                        {Number(selectedTransaction.redeemedAmount || 0).toFixed(2)}{" "}
-                        {selectedTransaction.currency}
-                      </Text>
-                    ),
-                  },
-                  {
-                    term: "Log Time",
-                    description: (
-                      <Text variant="bodyMd">
-                        {formatDate(selectedTransaction.createdAt)}
-                      </Text>
-                    ),
-                  },
-                  {
-                    term: "Issuance Time",
-                    description: (
-                      <Text variant="bodyMd">
-                        {selectedTransaction.issuedAt
-                          ? formatDate(selectedTransaction.issuedAt)
-                          : selectedTransaction.processAt
-                            ? `Scheduled: ${formatDate(selectedTransaction.processAt)} (Delayed)`
-                            : "-"}
-                      </Text>
-                    ),
-                  },
-                  {
-                    term: "Transaction Status",
-                    description: (
-                      <Badge
-                        tone={
-                          selectedTransaction.status === "Completed"
-                            ? "success"
-                            : "warning"
-                        }
-                      >
-                        {selectedTransaction.status}
-                      </Badge>
-                    ),
-                  },
-                  {
-                    term: "Merchant Notification",
-                    description: (
-                      <Badge
-                        tone={
-                          selectedTransaction.emailStatus === "Sent"
-                            ? "success"
-                            : selectedTransaction.emailStatus === "Failed"
-                              ? "critical"
-                              : "info"
-                        }
-                      >
-                        {selectedTransaction.emailStatus}
-                      </Badge>
-                    ),
-                  },
-                  ...(selectedTransaction.emailFailReason
-                    ? [
-                      {
-                        term: "Notification Issue Reason",
-                        description: (
-                          <Text variant="bodyMd" tone="critical">
-                            {selectedTransaction.emailFailReason}
-                          </Text>
-                        ),
-                      },
-                    ]
-                    : []),
-                ]}
-              />
-            </BlockStack>
-          </Modal.Section>
-        </Modal>
-      )}
+            onAction: () => {
+              setIsCancelOpen(false);
+              setCancelReason("");
+              setCancellingTransaction(null);
+            },
+          },
+        ]}
+      >
+        <Modal.Section>
+          <BlockStack gap="400">
+            <Text as="p">
+              Reason for cancellation. Please note that this action cannot be undone.
+            </Text>
+            <TextField
+              label="Cancellation reason"
+              labelHidden
+              value={cancelReason}
+              onChange={(val) => setCancelReason(val)}
+              autoComplete="off"
+              placeholder="Enter reason..."
+            />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
+
+      {/* View Cancellation Reason Modal */}
+      <Modal
+        open={isReasonOpen}
+        onClose={() => {
+          setIsReasonOpen(false);
+          setSelectedReason("");
+        }}
+        title="Cancellation reason"
+        primaryAction={{
+          content: "Close",
+          onAction: () => {
+            setIsReasonOpen(false);
+            setSelectedReason("");
+          },
+        }}
+      >
+        <Modal.Section>
+          <Text as="p">{selectedReason}</Text>
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }

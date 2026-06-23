@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import PropTypes from "prop-types";
 import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { ProgramForm } from "./ProgramForm";
@@ -91,6 +92,11 @@ function WizardProgress({ current, total }) {
   );
 }
 
+WizardProgress.propTypes = {
+  current: PropTypes.number.isRequired,
+  total: PropTypes.number.isRequired,
+};
+
 // --- Step Components ---
 
 function StepOne() {
@@ -115,7 +121,7 @@ function StepOne() {
           </h2>
         </div>
         <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", maxWidth: "550px", margin: "8px auto 0 auto" }}>
-          Let's set up your store credit program to reward customers and boost repeat purchases right away!
+          {"Let's"} set up your store credit program to reward customers and boost repeat purchases right away!
         </p>
       </div>
 
@@ -267,6 +273,24 @@ function StepTwo(props) {
   );
 }
 
+StepTwo.propTypes = {
+  amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  amountType: PropTypes.string.isRequired,
+  maxAmount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  previewPage: PropTypes.string.isRequired,
+  setPreviewPage: PropTypes.func.isRequired,
+  eligibility: PropTypes.shape({
+    d2c: PropTypes.bool,
+    b2b: PropTypes.bool,
+  }).isRequired,
+  bgColor: PropTypes.string.isRequired,
+  textColor: PropTypes.string.isRequired,
+  creditIcon: PropTypes.string.isRequired,
+  hideWatermark: PropTypes.bool.isRequired,
+  msgProduct: PropTypes.string.isRequired,
+  msgCart: PropTypes.string.isRequired,
+};
+
 function StepThree(props) {
   const displayAmount = calculateDisplayAmount(props.amount, props.amountType, props.maxAmount);
 
@@ -319,12 +343,32 @@ function StepThree(props) {
   );
 }
 
+StepThree.propTypes = {
+  amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  amountType: PropTypes.string.isRequired,
+  maxAmount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  bgColor: PropTypes.string.isRequired,
+  setBgColor: PropTypes.func.isRequired,
+  textColor: PropTypes.string.isRequired,
+  setTextColor: PropTypes.func.isRequired,
+  creditIcon: PropTypes.string.isRequired,
+  setCreditIcon: PropTypes.func.isRequired,
+  customIconSrc: PropTypes.string,
+  setCustomIconSrc: PropTypes.func.isRequired,
+  hideWatermark: PropTypes.bool.isRequired,
+  setHideWatermark: PropTypes.func.isRequired,
+  previewPage: PropTypes.string.isRequired,
+  setPreviewPage: PropTypes.func.isRequired,
+  msgProduct: PropTypes.string.isRequired,
+  msgCart: PropTypes.string.isRequired,
+};
+
 function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
   const [isVerifying, setIsVerifying] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   // Reusable embed status check
-  const checkEmbedStatus = async (tid) => {
+  const checkEmbedStatus = useCallback(async (tid) => {
     try {
       const res = await fetch("/api/get-embeded?theme_id=" + tid);
       const content = await res.json();
@@ -349,7 +393,7 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
       // Log error but do not stop verification on transient network errors
       return false;
     }
-  };
+  }, [setIsVerified]);
 
   // Poll in background when verifying
   useEffect(() => {
@@ -371,14 +415,14 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
       if (intervalId) clearInterval(intervalId);
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isVerifying, isVerified, themeId]);
+  }, [isVerifying, isVerified, themeId, checkEmbedStatus]);
 
   // Auto-check on load (background check)
   useEffect(() => {
     if (themeId && !isVerified) {
       checkEmbedStatus(themeId);
     }
-  }, [themeId]);
+  }, [themeId, isVerified, checkEmbedStatus]);
 
   const handleEnableClick = async () => {
     setIsVerifying(true);
@@ -459,7 +503,7 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
               Setup Successful
             </strong>
             <span style={{ fontSize: "14px", color: "#0f5132", fontWeight: "500" }}>
-              App embed successfully detected! You're ready to proceed to the final step.
+              App embed successfully detected! {"You're"} ready to proceed to the final step.
             </span>
           </div>
         </div>
@@ -528,10 +572,10 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
         <span style={{ fontSize: "20px", color: "#d97706", marginTop: "2px", flexShrink: 0 }}>⚠️</span>
         <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
           <strong style={{ fontSize: "15px", color: "#92400e", fontWeight: "700" }}>
-            Important: Don't skip this step!
+            Important: {"Don't"} skip this step!
           </strong>
           <span style={{ fontSize: "14px", color: "#b45309", fontWeight: "500" }}>
-            Loyalty Cashback won't work until you enable it in your theme. This only takes 10 seconds.
+            Loyalty Cashback {"won't"} work until you enable it in your theme. This only takes 10 seconds.
           </span>
         </div>
       </div>
@@ -553,7 +597,7 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
         </h3>
         <ol style={{ margin: 0, display: "flex", flexDirection: "column", gap: "10px", color: "#374151", fontSize: "14px", lineHeight: "1.5" }}>
           <li>
-            1. Click the <strong style={{ color: "#111827" }}>"Enable in Theme"</strong> button below
+            1. Click the <strong style={{ color: "#111827" }}>&quot;Enable in Theme&quot;</strong> button below
           </li>
           <li>
             2. Click <strong style={{ color: "#111827" }}>Save</strong> in the top right
@@ -606,11 +650,18 @@ function StepFour({ themeId, themeEditorUrl, isVerified, setIsVerified }) {
         </button>
       </div>
       <p style={{ fontSize: "14px", textAlign: "center", marginTop: "16px" }}>
-        Having trouble? <a href="#" style={{ color: "#2d7ff9", textDecoration: "underline" }}>contact support</a>
+        Having trouble? <a href="mailto:support@example.com" style={{ color: "#2d7ff9", textDecoration: "underline" }}>contact support</a>
       </p>
     </div>
   );
 }
+
+StepFour.propTypes = {
+  themeId: PropTypes.string.isRequired,
+  themeEditorUrl: PropTypes.string.isRequired,
+  isVerified: PropTypes.bool.isRequired,
+  setIsVerified: PropTypes.func.isRequired,
+};
 
 function StepFive() {
   return (
@@ -650,7 +701,7 @@ function StepFive() {
           ✓
         </div>
         <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#111827", margin: 0 }}>
-          You're all set! 🎉
+          {"You're"} all set! 🎉
         </h2>
         <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", margin: 0 }}>
           Loyalty cashback store credit is active on your store.
@@ -1005,7 +1056,7 @@ export default function OnboardingWizard({
             Welcome to Loyalty Cashback Store Credit
           </h1>
           <p style={{ fontSize: "15px", color: "#6b7280", letterSpacing: "0.2px", margin: 0 }}>
-            Let's get your loyalty cashback program set up
+            {"Let's"} get your loyalty cashback program set up
           </p>
         </div>
 
@@ -1141,3 +1192,50 @@ export default function OnboardingWizard({
     </s-page>
   );
 }
+
+OnboardingWizard.propTypes = {
+  shop: PropTypes.string,
+  themeId: PropTypes.string,
+  apiKey: PropTypes.string,
+  bgColor: PropTypes.string,
+  textColor: PropTypes.string,
+  creditIcon: PropTypes.string,
+  hideWatermark: PropTypes.bool,
+  shopId: PropTypes.string,
+  initialProgram: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    name: PropTypes.string,
+    programType: PropTypes.string,
+    amountType: PropTypes.string,
+    amount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    maxAmount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    enableExpiration: PropTypes.bool,
+    expirationType: PropTypes.string,
+    expirationDays: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    expirationDate: PropTypes.string,
+    enableDelay: PropTypes.bool,
+    delayDays: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    channels: PropTypes.shape({
+      online: PropTypes.bool,
+      pos: PropTypes.bool,
+      draft: PropTypes.bool,
+    }),
+    eligibility: PropTypes.shape({
+      d2c: PropTypes.bool,
+      b2b: PropTypes.bool,
+    }),
+    startDate: PropTypes.string,
+    startTime: PropTypes.string,
+    enableEndDate: PropTypes.bool,
+    endDate: PropTypes.string,
+    endTime: PropTypes.string,
+    showCartDrawerPoints: PropTypes.bool,
+    msgCart: PropTypes.string,
+    msgProduct: PropTypes.string,
+    notifyEmail: PropTypes.bool,
+    status: PropTypes.string,
+    issued: PropTypes.string,
+    budget: PropTypes.string,
+  }),
+  isExtensionEnabled: PropTypes.bool,
+};

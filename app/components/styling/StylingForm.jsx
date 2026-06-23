@@ -1,4 +1,5 @@
 import { useRef, useEffect } from "react";
+import PropTypes from "prop-types";
 
 const ICONS = {
   icon1: (color = "#F59E0B") => (
@@ -211,3 +212,16 @@ export function StylingForm({
     </s-stack>
   );
 }
+
+StylingForm.propTypes = {
+  bgColor: PropTypes.string,
+  setBgColor: PropTypes.func.isRequired,
+  textColor: PropTypes.string,
+  setTextColor: PropTypes.func.isRequired,
+  creditIcon: PropTypes.string,
+  setCreditIcon: PropTypes.func.isRequired,
+  customIconSrc: PropTypes.string,
+  setCustomIconSrc: PropTypes.func.isRequired,
+  hideWatermark: PropTypes.bool,
+  setHideWatermark: PropTypes.func.isRequired,
+};

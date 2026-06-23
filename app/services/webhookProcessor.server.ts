@@ -323,6 +323,10 @@ async function handleOrderFulfilled(
     return console.log(`[-] Order ${orderName} already Completed for program ${programId}. Skipping.`);
   }
 
+  if (existingTx?.status?.toUpperCase() === 'CANCELLED') {
+    return console.log(`[-] Order ${orderName} has been manually cancelled for program ${programId}. Skipping fulfillment credit processing.`);
+  }
+
   if (orderPayload.fulfillment_status !== 'fulfilled') {
     return console.log(`[-] Order ${orderName} is not fully fulfilled. Status: ${orderPayload.fulfillment_status}`);
   }

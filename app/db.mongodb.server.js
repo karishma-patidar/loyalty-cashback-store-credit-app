@@ -80,7 +80,9 @@ const eventSchema = new mongoose.Schema({
   programId: String,
   programName: String,
   issuedAt: Date,
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  cancellationReason: String,
+  cancelledAt: Date
 });
 
 const shopSchema = new mongoose.Schema({
@@ -135,7 +137,16 @@ export function getFlowProgramModel() {
 // Dynamic model retrieval/compilation per shop (collection name corresponds to the shop's domain)
 export function getShopModel(shop) {
   if (!shop) return null;
-  return mongoose.models[shop] || mongoose.model(shop, shopSchema, shop);
+  const cachedModel = mongoose.models[shop];
+  if (cachedModel) {
+    const hasCancellationReason = cachedModel.schema.path("events")?.schema?.path("cancellationReason");
+    if (!hasCancellationReason) {
+      delete mongoose.models[shop];
+    } else {
+      return cachedModel;
+    }
+  }
+  return mongoose.model(shop, shopSchema, shop);
 }
 
 // Alias for getShopModel to support both import conventions in route and processor files

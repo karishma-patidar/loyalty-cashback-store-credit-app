@@ -1,4 +1,4 @@
-import React from "react";
+import PropTypes from "prop-types";
 
 export function SkeletonLine({ width = "100%", height = 14, style = {} }) {
   return (
@@ -15,6 +15,12 @@ export function SkeletonLine({ width = "100%", height = 14, style = {} }) {
     />
   );
 }
+
+SkeletonLine.propTypes = {
+  width: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  height: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  style: PropTypes.object,
+};
 
 export function MetricCell({ label, tooltip, value, loading, id }) {
   const tooltipId = `tooltip-${id}`;
@@ -42,3 +48,11 @@ export function MetricCell({ label, tooltip, value, loading, id }) {
     </s-stack>
   );
 }
+
+MetricCell.propTypes = {
+  label: PropTypes.node.isRequired,
+  tooltip: PropTypes.node,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  loading: PropTypes.bool,
+  id: PropTypes.string,
+};

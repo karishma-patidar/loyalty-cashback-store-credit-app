@@ -470,7 +470,8 @@
 
       // 3. Handle injections inside Cart Drawers (strictly enforced by setting)
       const showOnDrawer = window.LoyaltyCredit.showCartDrawerPoints === true;
-      if (!showOnDrawer) {
+      const isCartPage = window.location.pathname.split('/').filter(Boolean).pop() === 'cart';
+      if (!showOnDrawer || isCartPage) {
         const existing = document.querySelector('.loyalty-credit-drawer-injected');
         if (existing) existing.remove();
         return;
