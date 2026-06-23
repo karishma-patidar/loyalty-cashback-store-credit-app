@@ -131,64 +131,66 @@ async function fetchMongoTransactions(shop, admin, activeTabId = null) {
     if (ShopModel) {
       await migrateShopData(shop);
     }
-    const docs = ShopModel ? await ShopModel.find({}) : [];
+    const storeDoc = ShopModel ? await ShopModel.findOne({ shop }) : null;
 
-    for (const doc of docs) {
-      if (doc.events && Array.isArray(doc.events)) {
-        for (const ev of doc.events) {
-          if (!ev.orderId) continue;
+    if (storeDoc && storeDoc.details) {
+      for (const [dateStr, dateEntry] of storeDoc.details.entries()) {
+        if (dateEntry.events && Array.isArray(dateEntry.events)) {
+          for (const ev of dateEntry.events) {
+            if (!ev.orderId) continue;
 
-          // Skip manual credit adjustments so they are only shown in the Credit Adjustment tab (tab index 2)
-          if (
-            ev.programId === "credit-adjustment" ||
-            ev.programType === "credit_adjustment" ||
-            ev.programType === "debit_adjustment" ||
-            String(ev.orderId).startsWith("adj-")
-          ) {
-            continue;
-          }
-
-          // Determine if custom program transaction
-          let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
-          if (ev.programId && programs.length > 0) {
-            const matchedProg = programs.find(p => p.programId === ev.programId || p.id === ev.programId);
-            if (matchedProg) {
-              isCustom = matchedProg.programType === "custom" || matchedProg.isFlowProgram === true;
+            // Skip manual credit adjustments so they are only shown in the Credit Adjustment tab (tab index 2)
+            if (
+              ev.programId === "credit-adjustment" ||
+              ev.programType === "credit_adjustment" ||
+              ev.programType === "debit_adjustment" ||
+              String(ev.orderId).startsWith("adj-")
+            ) {
+              continue;
             }
-          }
 
-          const txObj = {
-            id: ev._id
-              ? ev._id.toString()
-              : String(ev.orderId || Math.random()),
-            orderId: ev.orderId,
-            customerId: ev.customerId,
-            orderName: ev.orderName,
-            createdAt: ev.createdAt
-              ? new Date(ev.createdAt).toISOString()
-              : new Date(doc.createdAt).toISOString(),
-            issuedAt:
-              ev.status === "Completed" && ev.issuedAt
-                ? new Date(ev.issuedAt).toISOString()
+            // Determine if custom program transaction
+            let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
+            if (ev.programId && programs.length > 0) {
+              const matchedProg = programs.find(p => p.programId === ev.programId || p.id === ev.programId);
+              if (matchedProg) {
+                isCustom = matchedProg.programType === "custom" || matchedProg.isFlowProgram === true;
+              }
+            }
+
+            const txObj = {
+              id: ev._id
+                ? ev._id.toString()
+                : String(ev.orderId || Math.random()),
+              orderId: ev.orderId,
+              customerId: ev.customerId,
+              orderName: ev.orderName,
+              createdAt: ev.createdAt
+                ? new Date(ev.createdAt).toISOString()
+                : new Date(dateStr).toISOString(),
+              issuedAt:
+                ev.status === "Completed" && ev.issuedAt
+                  ? new Date(ev.issuedAt).toISOString()
+                  : null,
+              processAt: ev.processAt
+                ? new Date(ev.processAt).toISOString()
                 : null,
-            processAt: ev.processAt
-              ? new Date(ev.processAt).toISOString()
-              : null,
-            customerName: ev.customerName,
-            issuedAmount: Number(ev.issuedAmount || 0),
-            redeemedAmount: Number(ev.redeemedAmount || 0),
-            currency: ev.currency,
-            status: ev.status,
-            emailStatus: ev.emailStatus,
-            emailFailReason: ev.emailFailReason || "",
-            type: ev.programType || ev.type || "Cashback",
-            cancellationReason: ev.cancellationReason || "",
-          };
+              customerName: ev.customerName,
+              issuedAmount: Number(ev.issuedAmount || 0),
+              redeemedAmount: Number(ev.redeemedAmount || 0),
+              currency: ev.currency,
+              status: ev.status,
+              emailStatus: ev.emailStatus,
+              emailFailReason: ev.emailFailReason || "",
+              type: ev.programType || ev.type || "Cashback",
+              cancellationReason: ev.cancellationReason || "",
+            };
 
-          if (isCustom) {
-            custom.push(txObj);
-          } else {
-            cashback.push(txObj);
+            if (isCustom) {
+              custom.push(txObj);
+            } else {
+              cashback.push(txObj);
+            }
           }
         }
       }
@@ -302,32 +304,35 @@ export async function action({ request }) {
         return Response.json({ success: false, error: "Database model not found." });
       }
 
-      // Update in MongoDB
-      const result = await ShopModel.updateOne(
-        { "events._id": transactionId },
-        {
-          $set: {
-            "events.$.status": "Cancelled",
-            "events.$.cancellationReason": reason,
-            "events.$.cancelledAt": new Date()
-          }
-        },
-        { strict: false }
-      );
+      const storeDoc = await ShopModel.findOne({ shop });
+      if (!storeDoc) {
+        return Response.json({ success: false, error: "Shop document not found." });
+      }
 
-      if (result.matchedCount === 0) {
-        // Fallback to query by orderId
-        await ShopModel.updateOne(
-          { "events.orderId": transactionId },
-          {
-            $set: {
-              "events.$.status": "Cancelled",
-              "events.$.cancellationReason": reason,
-              "events.$.cancelledAt": new Date()
+      let updated = false;
+      if (storeDoc.details) {
+        for (const [dateStr, dateEntry] of storeDoc.details.entries()) {
+          const events = dateEntry.events || [];
+          for (const ev of events) {
+            if (String(ev._id) === String(transactionId) || String(ev.orderId) === String(transactionId)) {
+              ev.status = "Cancelled";
+              ev.cancellationReason = reason;
+              ev.cancelledAt = new Date();
+              updated = true;
             }
-          },
-          { strict: false }
-        );
+          }
+          if (updated) {
+            storeDoc.details.set(dateStr, { events });
+            break;
+          }
+        }
+      }
+
+      if (updated) {
+        storeDoc.markModified('details');
+        await storeDoc.save();
+      } else {
+        return Response.json({ success: false, error: "Transaction not found." });
       }
 
       return Response.json({ success: true, transactionId });
@@ -361,70 +366,72 @@ export async function action({ request }) {
 
     try {
       const ShopModel = getShopModel(shop);
-      const docs = await ShopModel.find({});
+      const storeDoc = ShopModel ? await ShopModel.findOne({ shop }) : null;
 
-      for (const doc of docs) {
-        if (doc.events && Array.isArray(doc.events)) {
-          for (const ev of doc.events) {
-            // Skip manual credit adjustments so they are only shown in the Credit Adjustment tab (tab index 2)
-            if (
-              ev.programId === "credit-adjustment" ||
-              ev.programType === "credit_adjustment" ||
-              ev.programType === "debit_adjustment" ||
-              String(ev.orderId).startsWith("adj-")
-            ) {
-              continue;
-            }
-
-            // Determine if custom program transaction
-            let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
-            if (ev.programId && programs.length > 0) {
-              const matchedProg = programs.find(p => p.programId === ev.programId || p.id === ev.programId);
-              if (matchedProg) {
-                isCustom = matchedProg.programType === "custom" || matchedProg.isFlowProgram === true;
-              }
-            }
-
-            // 1. Program Type Filter
-            if (tab === "1") {
-              if (!isCustom) continue;
-            } else {
-              if (isCustom) continue;
-            }
-
-            // 2. Search Query Filter
-            if (searchQuery) {
-              const matchesQuery =
-                String(ev.orderName || "")
-                  .toLowerCase()
-                  .includes(searchQuery.toLowerCase()) ||
-                String(ev.customerName || "")
-                  .toLowerCase()
-                  .includes(searchQuery.toLowerCase());
-              if (!matchesQuery) {
+      if (storeDoc && storeDoc.details) {
+        for (const [dateStr, dateEntry] of storeDoc.details.entries()) {
+          if (dateEntry.events && Array.isArray(dateEntry.events)) {
+            for (const ev of dateEntry.events) {
+              // Skip manual credit adjustments so they are only shown in the Credit Adjustment tab (tab index 2)
+              if (
+                ev.programId === "credit-adjustment" ||
+                ev.programType === "credit_adjustment" ||
+                ev.programType === "debit_adjustment" ||
+                String(ev.orderId).startsWith("adj-")
+              ) {
                 continue;
               }
-            }
 
-            allTransactions.push({
-              orderId: ev.orderId,
-              orderName: ev.orderName,
-              customerName: ev.customerName,
-              issuedAmount: Number(ev.issuedAmount || 0),
-              redeemedAmount: Number(ev.redeemedAmount || 0),
-              currency: ev.currency,
-              status: ev.status,
-              emailStatus: ev.emailStatus,
-              type: ev.programType || ev.type || "Cashback",
-              createdAt: ev.createdAt
-                ? new Date(ev.createdAt)
-                : new Date(doc.createdAt),
-              issuedAt: ev.issuedAt
-                ? new Date(ev.issuedAt)
-                : ev.createdAt
+              // Determine if custom program transaction
+              let isCustom = ["Custom Program", "custom", "fixed", "percentage", "Flow Program"].includes(ev.programType || ev.type);
+              if (ev.programId && programs.length > 0) {
+                const matchedProg = programs.find(p => p.programId === ev.programId || p.id === ev.programId);
+                if (matchedProg) {
+                  isCustom = matchedProg.programType === "custom" || matchedProg.isFlowProgram === true;
+                }
+              }
+
+              // 1. Program Type Filter
+              if (tab === "1") {
+                if (!isCustom) continue;
+              } else {
+                if (isCustom) continue;
+              }
+
+              // 2. Search Query Filter
+              if (searchQuery) {
+                const matchesQuery =
+                  String(ev.orderName || "")
+                    .toLowerCase()
+                    .includes(searchQuery.toLowerCase()) ||
+                  String(ev.customerName || "")
+                    .toLowerCase()
+                    .includes(searchQuery.toLowerCase());
+                if (!matchesQuery) {
+                  continue;
+                }
+              }
+
+              allTransactions.push({
+                orderId: ev.orderId,
+                orderName: ev.orderName,
+                customerName: ev.customerName,
+                issuedAmount: Number(ev.issuedAmount || 0),
+                redeemedAmount: Number(ev.redeemedAmount || 0),
+                currency: ev.currency,
+                status: ev.status,
+                emailStatus: ev.emailStatus,
+                type: ev.programType || ev.type || "Cashback",
+                createdAt: ev.createdAt
                   ? new Date(ev.createdAt)
-                  : new Date(doc.createdAt),
-            });
+                  : new Date(dateStr),
+                issuedAt: ev.issuedAt
+                  ? new Date(ev.issuedAt)
+                  : ev.createdAt
+                    ? new Date(ev.createdAt)
+                    : new Date(dateStr),
+              });
+            }
           }
         }
       }

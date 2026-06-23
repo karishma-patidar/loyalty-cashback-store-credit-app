@@ -85,9 +85,15 @@ const eventSchema = new mongoose.Schema({
   cancelledAt: Date
 });
 
-const shopSchema = new mongoose.Schema({
-  date: { type: String, required: true },
-  events: [eventSchema]
+const storeSchema = new mongoose.Schema({
+  shop: { type: String, required: true, unique: true },
+  details: {
+    type: Map,
+    of: new mongoose.Schema({
+      events: [eventSchema]
+    }, { _id: false }),
+    default: {}
+  }
 }, { timestamps: true });
 
 const appSettingsSchema = new mongoose.Schema({
@@ -134,61 +140,65 @@ export function getFlowProgramModel() {
   return conn.models.FlowProgram || conn.model("FlowProgram", flowProgramSchema, "flow_programs");
 }
 
-// Dynamic model retrieval/compilation per shop (collection name corresponds to the shop's domain)
-export function getShopModel(shop) {
-  if (!shop) return null;
-  const cachedModel = mongoose.models[shop];
-  if (cachedModel) {
-    const hasCancellationReason = cachedModel.schema.path("events")?.schema?.path("cancellationReason");
-    if (!hasCancellationReason) {
-      delete mongoose.models[shop];
-    } else {
-      return cachedModel;
-    }
-  }
-  return mongoose.model(shop, shopSchema, shop);
+/**
+ * @param {string} [shop]
+ */
+// eslint-disable-next-line no-unused-vars
+export function getStoreModel(shop) {
+  return mongoose.models.Store || mongoose.model("Store", storeSchema, "store");
 }
 
-// Alias for getShopModel to support both import conventions in route and processor files
-export const getCustomerModel = getShopModel;
+// Keep getShopModel / getCustomerModel as fallback alias pointing to getStoreModel
+export const getShopModel = getStoreModel;
+export const getCustomerModel = getStoreModel;
 
 export async function migrateShopData(shop) {
   if (!shop) return;
   try {
-    const ShopModel = getShopModel(shop);
-    if (!ShopModel) return;
+    const StoreModel = getStoreModel();
+    let storeDoc = await StoreModel.findOne({ shop });
+    
+    // Check if old collection exists in the "orders" database
+    const conn = mongoose.connection;
+    const collections = await conn.db.listCollections({ name: shop }).toArray();
+    const oldCollectionExists = collections.length > 0;
 
-    const rawCollection = ShopModel.collection;
-    const docs = await rawCollection.find({}).toArray();
-    for (const doc of docs) {
-      let changed = false;
-      if (doc.events && Array.isArray(doc.events)) {
-        for (const ev of doc.events) {
-          // Rename amount to issuedAmount
-          if ('amount' in ev) {
-            ev.issuedAmount = ev.amount;
-            delete ev.amount;
-            changed = true;
+    if (!storeDoc && oldCollectionExists) {
+      console.log(`[Migration] Migrating old collection data for shop: ${shop}`);
+      const oldCollection = conn.db.collection(shop);
+      const oldDocs = await oldCollection.find({}).toArray();
+      
+      const details = new Map();
+      for (const doc of oldDocs) {
+        if (!doc.date || !Array.isArray(doc.events)) continue;
+        
+        // Clean event properties (migrate legacy names)
+        const cleanedEvents = doc.events.map(ev => {
+          const newEv = { ...ev };
+          if ('amount' in newEv) {
+            newEv.issuedAmount = newEv.amount;
+            delete newEv.amount;
           }
-          // Rename type to programType
-          if ('type' in ev) {
-            ev.programType = ev.type;
-            delete ev.type;
-            changed = true;
+          if ('type' in newEv) {
+            newEv.programType = newEv.type;
+            delete newEv.type;
           }
-        }
+          return newEv;
+        });
+
+        details.set(doc.date, { events: cleanedEvents });
       }
-      if (changed) {
-        await rawCollection.updateOne({ _id: doc._id }, { $set: { events: doc.events } });
+
+      await StoreModel.create({ shop, details });
+      console.log(`[Migration] Successfully migrated shop: ${shop} to unified 'store' collection`);
+      
+      try {
+        await oldCollection.rename(`${shop}_backup`);
+        console.log(`[Migration] Renamed old collection ${shop} to ${shop}_backup`);
+      } catch (renameErr) {
+        console.error(`[Migration Warning] Could not rename old collection ${shop}:`, renameErr);
       }
     }
-
-    // Now run the "Custom Program" to "Cashback" migration on programType (Commented out to support Custom Program tab)
-    // await ShopModel.updateMany(
-    //   { "events.programType": "Custom Program" },
-    //   { $set: { "events.$[elem].programType": "Cashback" } },
-    //   { arrayFilters: [{ "elem.programType": "Custom Program" }] }
-    // );
   } catch (err) {
     console.error(`[Migration Error] Failed to migrate shop data for ${shop}:`, err);
   }

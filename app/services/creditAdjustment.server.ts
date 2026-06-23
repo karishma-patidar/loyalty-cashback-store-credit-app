@@ -192,15 +192,20 @@ async function syncToMongoDB(
     const ShopModel = getShopModel(shop);
     if (!ShopModel) return;
 
-    const todayStr = new Date().toISOString().split("T")[0];
-    let doc = await ShopModel.findOne({ date: todayStr });
-    if (!doc) {
-      doc = await ShopModel.create({ date: todayStr, events: [] });
+    let storeDoc = await ShopModel.findOne({ shop });
+    if (!storeDoc) {
+      storeDoc = await ShopModel.create({ shop, details: new Map() });
+    } else if (!storeDoc.details) {
+      storeDoc.details = new Map();
     }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const dateEntry = storeDoc.details.get(todayStr) || { events: [] };
+    const events = dateEntry.events || [];
 
     const uniqueId = `adj-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    doc.events.push({
+    events.push({
       shop,
       orderId: uniqueId,
       orderName: event.programType === "credit_adjustment" ? "Credit Adjustment" : "Debit Adjustment",
@@ -223,7 +228,9 @@ async function syncToMongoDB(
       createdAt: new Date(),
     });
 
-    await doc.save();
+    storeDoc.details.set(todayStr, { events });
+    storeDoc.markModified('details');
+    await storeDoc.save();
     console.log(`[MongoDB Sync] Added ${event.programType} transaction event for customer ${event.customerId}`);
   } catch (err) {
     console.error("[MongoDB Sync Error] Failed to sync adjustment transaction:", err);

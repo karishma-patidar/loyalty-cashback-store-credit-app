@@ -37,17 +37,19 @@ export const loader = async ({ request }) => {
     try {
       await connectMongoDB();
       const ShopModel = getShopModel(shop);
-      const docs = ShopModel ? await ShopModel.find({}) : [];
+      const storeDoc = ShopModel ? await ShopModel.findOne({ shop }) : null;
       let event = null;
 
       const numericOrderId = orderId.split("/").pop();
 
-      for (const doc of docs) {
-        if (doc.events && Array.isArray(doc.events)) {
-          event = doc.events.find(
-            (e) => String(e.orderId) === String(orderId) || String(e.orderId) === String(numericOrderId)
-          );
-          if (event) break;
+      if (storeDoc && storeDoc.details) {
+        for (const dateEntry of storeDoc.details.values()) {
+          if (dateEntry.events && Array.isArray(dateEntry.events)) {
+            event = dateEntry.events.find(
+              (e) => String(e.orderId) === String(orderId) || String(e.orderId) === String(numericOrderId)
+            );
+            if (event) break;
+          }
         }
       }
 
@@ -183,7 +185,7 @@ export const loader = async ({ request }) => {
     // 2. Load transactions from MongoDB
     await connectMongoDB();
     const ShopModel = getShopModel(shop);
-    let docs = ShopModel ? await ShopModel.find({}) : [];
+    const storeDoc = ShopModel ? await ShopModel.findOne({ shop }) : null;
 
     // One-time self-healing database migration to backfill missing expiresAt values
     let migrated = false;
@@ -201,12 +203,13 @@ export const loader = async ({ request }) => {
       ? parseInt(program.expirationDays || "15", 10)
       : 15;
 
-    for (const doc of docs) {
+    if (storeDoc && storeDoc.details) {
       let docChanged = false;
-      if (doc.events && Array.isArray(doc.events)) {
-        for (const ev of doc.events) {
+      for (const [dateStr, dateEntry] of storeDoc.details.entries()) {
+        const events = dateEntry.events || [];
+        for (const ev of events) {
           if (ev.status === "Completed" && ev.issuedAmount > 0 && !ev.expiresAt) {
-            const created = ev.issuedAt || ev.createdAt || doc.createdAt || new Date();
+            const created = ev.issuedAt || ev.createdAt || new Date();
             const expDate = new Date(created);
             expDate.setDate(expDate.getDate() + defaultExpDays);
             ev.expiresAt = expDate;
@@ -214,54 +217,57 @@ export const loader = async ({ request }) => {
             migrated = true;
           }
         }
+        if (docChanged) {
+          storeDoc.details.set(dateStr, { events });
+          docChanged = false;
+        }
       }
-      if (docChanged) {
-        await ShopModel.updateOne({ _id: doc._id }, { $set: { events: doc.events } });
+      if (migrated) {
+        storeDoc.markModified('details');
+        await storeDoc.save();
       }
-    }
-
-    if (migrated && ShopModel) {
-      docs = await ShopModel.find({});
     }
 
     const transactions = [];
     const customerGid = customerId;
     const customerNumericId = customerId.split("/").pop();
 
-    for (const doc of docs) {
-      if (doc.events && Array.isArray(doc.events)) {
-        for (const ev of doc.events) {
-          const evCustomerGid = ev.customerId;
-          const evCustomerNumericId = evCustomerGid ? evCustomerGid.split("/").pop() : "";
+    if (storeDoc && storeDoc.details) {
+      for (const dateEntry of storeDoc.details.values()) {
+        if (dateEntry.events && Array.isArray(dateEntry.events)) {
+          for (const ev of dateEntry.events) {
+            const evCustomerGid = ev.customerId;
+            const evCustomerNumericId = evCustomerGid ? evCustomerGid.split("/").pop() : "";
 
-          if (
-            (evCustomerGid && evCustomerGid === customerGid) ||
-            (evCustomerNumericId && evCustomerNumericId === customerNumericId)
-          ) {
-            // Add credit transaction
-            if (ev.status === "Completed" && ev.issuedAmount > 0) {
-              transactions.push({
-                id: `${ev._id || ev.orderId}-credit`,
-                amount: ev.issuedAmount,
-                currencyCode: ev.currency || currency || "USD",
-                type: "credit",
-                createdAt: ev.issuedAt || ev.createdAt,
-                expiresAt: ev.expiresAt || null,
-                // If it has expiresAt and is not expired, remainingAmount is the issuedAmount
-                remainingAmount: ev.expiresAt && new Date(ev.expiresAt) > new Date() ? ev.issuedAmount : null,
-              });
-            }
-            // Add debit transaction
-            if (ev.redeemedAmount > 0) {
-              transactions.push({
-                id: `${ev._id || ev.orderId}-debit`,
-                amount: ev.redeemedAmount,
-                currencyCode: ev.currency || currency || "USD",
-                type: "debit",
-                createdAt: ev.createdAt,
-                expiresAt: null,
-                remainingAmount: null,
-              });
+            if (
+              (evCustomerGid && evCustomerGid === customerGid) ||
+              (evCustomerNumericId && evCustomerNumericId === customerNumericId)
+            ) {
+              // Add credit transaction
+              if (ev.status === "Completed" && ev.issuedAmount > 0) {
+                transactions.push({
+                  id: `${ev._id || ev.orderId}-credit`,
+                  amount: ev.issuedAmount,
+                  currencyCode: ev.currency || currency || "USD",
+                  type: "credit",
+                  createdAt: ev.issuedAt || ev.createdAt,
+                  expiresAt: ev.expiresAt || null,
+                  // If it has expiresAt and is not expired, remainingAmount is the issuedAmount
+                  remainingAmount: ev.expiresAt && new Date(ev.expiresAt) > new Date() ? ev.issuedAmount : null,
+                });
+              }
+              // Add debit transaction
+              if (ev.redeemedAmount > 0) {
+                transactions.push({
+                  id: `${ev._id || ev.orderId}-debit`,
+                  amount: ev.redeemedAmount,
+                  currencyCode: ev.currency || currency || "USD",
+                  type: "debit",
+                  createdAt: ev.createdAt,
+                  expiresAt: null,
+                  remainingAmount: null,
+                });
+              }
             }
           }
         }

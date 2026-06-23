@@ -296,7 +296,7 @@ export default function NewProgram() {
   }, [fetcher.state, fetcher.data, isSubmitting, editId, navigate, shopify]);
 
   useEffect(() => {
-    if (currentStatus === "Paused") return;
+    if (currentStatus === "Draft") return;
     if (enableEndDate && endDate && endTime) {
       const datePart = endDate.includes("T") ? endDate.split("T")[0] : endDate;
       const end = new Date(`${datePart} ${endTime}`);
@@ -306,7 +306,7 @@ export default function NewProgram() {
         setCurrentStatus("Active");
       }
     } else {
-      if (currentStatus !== "Active" && currentStatus !== "Paused")
+      if (currentStatus !== "Active" && currentStatus !== "Draft")
         setCurrentStatus("Active");
     }
   }, [enableEndDate, endDate, endTime, currentStatus]);
@@ -375,6 +375,7 @@ export default function NewProgram() {
     startDate,
     startTime,
     showCartDrawerPoints,
+    initialProgram?.issued,
   ]);
 
   const handleDiscard = useCallback(() => {
@@ -403,7 +404,7 @@ export default function NewProgram() {
   }, [initialFormState]);
 
   const toggleStatus = useCallback(() => {
-    const nextStatus = currentStatus === "Active" ? "Paused" : "Active";
+    const nextStatus = currentStatus === "Active" ? "Draft" : "Active";
     setIsStatusToggling(true);
 
     // Show success toast instantly!
@@ -603,7 +604,7 @@ export default function NewProgram() {
                   <s-box padding="5" paddingBlockStart="0">
                     <s-stack direction="block">
                       <s-text color="subdued">
-                        Notify customers or the company's main contact when
+                        Notify customers or the company&apos;s main contact when
                         store credit is successfully issued.
                       </s-text>
                       <s-checkbox

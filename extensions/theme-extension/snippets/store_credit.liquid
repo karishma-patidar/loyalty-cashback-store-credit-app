@@ -4,54 +4,56 @@
 {% endif %}
 
 {% assign active_program = null %}
+{% assign is_valid_schedule = false %}
+{% assign now_ts = 'now' | date: '%s' | plus: 0 %}
+
 {% for prog in programs_metafield %}
   {% if prog.status == 'Active' %}
-    {% assign active_program = prog %}
-    {% break %}
+    {% assign start_valid = true %}
+    {% if prog.startDate != blank %}
+      {% assign start_time_str = prog.startTime | default: '00:00' %}
+      {% assign start_combined = prog.startDate | append: ' ' | append: start_time_str %}
+      {% assign start_ts = start_combined | date: '%s' | plus: 0 %}
+      {% if now_ts < start_ts %}
+        {% assign start_valid = false %}
+      {% endif %}
+    {% endif %}
+
+    {% assign end_valid = true %}
+    {% if prog.enableEndDate and prog.endDate != blank %}
+      {% assign end_time_str = prog.endTime | default: '23:59' %}
+      {% assign end_combined = prog.endDate | append: ' ' | append: end_time_str %}
+      {% assign end_ts = end_combined | date: '%s' | plus: 0 %}
+      {% if now_ts > end_ts %}
+        {% assign end_valid = false %}
+      {% endif %}
+    {% endif %}
+
+    {% if start_valid and end_valid %}
+      {% assign active_program = prog %}
+      {% assign is_valid_schedule = true %}
+      {% break %}
+    {% endif %}
   {% endif %}
 {% endfor %}
 
-{% assign is_valid_schedule = false %}
-{% if active_program %}
-  {% assign now_ts = 'now' | date: '%s' | plus: 0 %}
-
-  {% comment %} Start Date/Time Check {% endcomment %}
-  {% assign start_valid = true %}
-  {% if active_program.startDate != blank %}
-    {% assign start_time_str = active_program.startTime | default: '00:00' %}
-    {% assign start_combined = active_program.startDate | append: ' ' | append: start_time_str %}
-    {% assign start_ts = start_combined | date: '%s' | plus: 0 %}
-    {% if now_ts < start_ts %}
-      {% assign start_valid = false %}
-    {% endif %}
-  {% endif %}
-
-  {% comment %} End Date/Time Check (if enabled) {% endcomment %}
-  {% assign end_valid = true %}
-  {% if active_program.enableEndDate and active_program.endDate != blank %}
-    {% assign end_time_str = active_program.endTime | default: '23:59' %}
-    {% assign end_combined = active_program.endDate | append: ' ' | append: end_time_str %}
-    {% assign end_ts = end_combined | date: '%s' | plus: 0 %}
-    {% if now_ts > end_ts %}
-      {% assign end_valid = false %}
-    {% endif %}
-  {% endif %}
-
-  {% if start_valid and end_valid %}
-    {% assign is_valid_schedule = true %}
-  {% endif %}
+{% assign programs_exist = false %}
+{% if programs_metafield != blank and programs_metafield.size > 0 %}
+  {% assign programs_exist = true %}
 {% endif %}
 
-{% assign show_widget = true %}
-{% if active_program %}
-  {% if active_program.eligibility.d2c != true or is_valid_schedule == false %}
-    {% assign show_widget = false %}
-  {% endif %}
-{% endif %}
-
+{% assign show_widget = false %}
 {% assign is_preview = false %}
-{% if active_program == blank %}
-  {% assign is_preview = true %}
+
+{% if active_program %}
+  {% if active_program.eligibility.d2c == true and is_valid_schedule == true %}
+    {% assign show_widget = true %}
+  {% endif %}
+{% else %}
+  {% if programs_exist == false %}
+    {% assign show_widget = true %}
+    {% assign is_preview = true %}
+  {% endif %}
 {% endif %}
 
 {% if show_widget %}
@@ -297,4 +299,23 @@
       {% endif %}
     </div>
   </div>
+  <script>
+    (function() {
+      function checkEmbed() {
+        const marker = document.getElementById('loyalty-credit-app-embed-marker');
+        if (!marker) {
+          const blocks = document.querySelectorAll('.loyalty-credit-block');
+          blocks.forEach(block => {
+            block.style.setProperty('display', 'none', 'important');
+          });
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', checkEmbed);
+      } else {
+        checkEmbed();
+      }
+      window.addEventListener('load', checkEmbed);
+    })();
+  </script>
 {% endif %}

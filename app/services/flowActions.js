@@ -448,7 +448,7 @@ function validateAndPrepareReward(program, orderAmount = 0) {
  * Add new detection rules here when new triggers are introduced.
  */
 function resolveTrigger(properties) {
-    const { order_id, segment_id, customer_id } = properties;
+    const { order_id, customer_id } = properties;
 
     if (order_id?.includes("/Order/")) return "order_fulfilled";
     if (order_id?.includes("/Segment/")) return "customer_segment_added";
@@ -868,19 +868,26 @@ export async function setCreditCustomerStoreCreditApi(data) {
 
             const todayStr = new Date().toISOString().split('T')[0];
 
-            const updateResult = await ShopModel.updateOne(
-                { date: todayStr, 'events': { $not: { $elemMatch: { orderId: orderId, programId: reward?.programId } } } },
-                { $push: { events: eventToSave } }
-            );
-
-            if (updateResult.matchedCount === 0) {
-                const dateDoc = await ShopModel.findOne({ date: todayStr });
-                if (!dateDoc) {
-                    await ShopModel.create({ date: todayStr, events: [eventToSave] });
-                }
+            let storeDoc = await ShopModel.findOne({ shop: storeName });
+            if (!storeDoc) {
+                storeDoc = await ShopModel.create({ shop: storeName, details: new Map() });
+            } else if (!storeDoc.details) {
+                storeDoc.details = new Map();
             }
 
-            console.log("✅ Successfully saved Flow Action event to MongoDB dashboard.");
+            const dateEntry = storeDoc.details.get(todayStr) || { events: [] };
+            const events = dateEntry.events || [];
+            
+            const exists = events.some(ev => ev.orderId === orderId && ev.programId === reward?.programId);
+            if (!exists) {
+                events.push(eventToSave);
+                storeDoc.details.set(todayStr, { events });
+                storeDoc.markModified('details');
+                await storeDoc.save();
+                console.log("✅ Successfully saved Flow Action event to MongoDB dashboard.");
+            } else {
+                console.log("[-] Flow Action event already exists in MongoDB dashboard. Skipping duplicate.");
+            }
         }
     } catch (dbErr) {
         console.error("❌ Failed to save Flow Action event to MongoDB:", dbErr);

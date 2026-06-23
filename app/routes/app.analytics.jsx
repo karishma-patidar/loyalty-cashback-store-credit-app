@@ -1,11 +1,10 @@
 
 import { useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import { useLoaderData, useSubmit, useNavigation, useNavigate } from "react-router";
 import DateFilter from "../components/analytics_search_filter";
 import {
     ResponsiveContainer,
-    LineChart,
-    Line,
     AreaChart,
     Area,
     BarChart,
@@ -242,7 +241,6 @@ export const loader = async ({ request }) => {
 
     // ── Shop configuration fetching
     let shopCurrency = "INR";
-    let rawCurrencies = [];
     let activeLanguages = [];
 
     try {
@@ -252,12 +250,8 @@ export const loader = async ({ request }) => {
         const shopData = configData?.data?.shop;
         shopCurrency = shopData?.currencyCode || "INR";
 
-        rawCurrencies = shopData?.enabledPresentmentCurrencies || [shopCurrency];
-
         const rawLocales = configData?.data?.shopLocales || [];
         const publishedLocales = rawLocales.filter(l => l.published);
-        const primaryLocaleObj = publishedLocales.find(l => l.primary) || publishedLocales[0];
-        const defaultLanguage = primaryLocaleObj ? primaryLocaleObj.locale : "en";
 
         activeLanguages = publishedLocales.map(l => ({
             value: l.locale,
@@ -266,7 +260,6 @@ export const loader = async ({ request }) => {
 
     } catch (err) {
         console.error("Error fetching shop configuration:", err);
-        rawCurrencies = ["INR"];
         activeLanguages = [{ value: "en", label: "English" }];
     }
 
@@ -276,44 +269,46 @@ export const loader = async ({ request }) => {
     try {
         const ShopModel = getShopModel(shop);
         if (ShopModel) {
-            const docs = await ShopModel.find({});
-            for (const doc of docs) {
-                if (!Array.isArray(doc.events)) continue;
-                for (const ev of doc.events) {
-                    if (!ev.orderId) continue;
-                    const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(doc.createdAt);
-                    let programName = ev.programName;
-                    if (!programName && programs.length > 0) {
-                        if (ev.programId) {
-                            const p = programs.find(p => p.id === ev.programId || p.programId === ev.programId);
-                            if (p) programName = p.name || p.programName;
-                        } else {
-                            const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
-                            const firstCashbackProg = programs.find(p => p.programType !== "custom" && !p.isFlowProgram);
-                            const firstCustomProg = programs.find(p => p.programType === "custom" || p.isFlowProgram);
-                            if (evIsCustom && firstCustomProg) {
-                                programName = firstCustomProg.name || firstCustomProg.programName;
-                            } else if (!evIsCustom && firstCashbackProg) {
-                                programName = firstCashbackProg.name || firstCashbackProg.programName;
+            const storeDoc = await ShopModel.findOne({ shop });
+            if (storeDoc && storeDoc.details) {
+                for (const [dateStr, dateEntry] of storeDoc.details.entries()) {
+                    if (!Array.isArray(dateEntry.events)) continue;
+                    for (const ev of dateEntry.events) {
+                        if (!ev.orderId) continue;
+                        const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(dateStr);
+                        let programName = ev.programName;
+                        if (!programName && programs.length > 0) {
+                            if (ev.programId) {
+                                const p = programs.find(p => p.id === ev.programId || p.programId === ev.programId);
+                                if (p) programName = p.name || p.programName;
+                            } else {
+                                const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
+                                const firstCashbackProg = programs.find(p => p.programType !== "custom" && !p.isFlowProgram);
+                                const firstCustomProg = programs.find(p => p.programType === "custom" || p.isFlowProgram);
+                                if (evIsCustom && firstCustomProg) {
+                                    programName = firstCustomProg.name || firstCustomProg.programName;
+                                } else if (!evIsCustom && firstCashbackProg) {
+                                    programName = firstCashbackProg.name || firstCashbackProg.programName;
+                                }
                             }
                         }
-                    }
 
-                    const eventObj = {
-                        orderId: ev.orderId,
-                        orderName: ev.orderName,
-                        customerId: ev.customerId,
-                        customerName: ev.customerName,
-                        amount: Number(ev.issuedAmount || 0),
-                        redeemedAmount: Number(ev.redeemedAmount || 0),
-                        currency: ev.currency,
-                        status: ev.status,
-                        name: programName || (ev.programType === "Cashback" ? "Cashback" : ev.programType) || "Cashback",
-                        type: ev.programType || "Cashback",
-                        createdAt: eventDate,
-                    };
-                    allTimeEvents.push(eventObj);
-                    if (eventDate >= start && eventDate <= end) rangeEvents.push(eventObj);
+                        const eventObj = {
+                            orderId: ev.orderId,
+                            orderName: ev.orderName,
+                            customerId: ev.customerId,
+                            customerName: ev.customerName,
+                            amount: Number(ev.issuedAmount || 0),
+                            redeemedAmount: Number(ev.redeemedAmount || 0),
+                            currency: ev.currency,
+                            status: ev.status,
+                            name: programName || (ev.programType === "Cashback" ? "Cashback" : ev.programType) || "Cashback",
+                            type: ev.programType || "Cashback",
+                            createdAt: eventDate,
+                        };
+                        allTimeEvents.push(eventObj);
+                        if (eventDate >= start && eventDate <= end) rangeEvents.push(eventObj);
+                    }
                 }
             }
         }
@@ -538,6 +533,11 @@ function SkeletonLines({ lines = 4, height = 12 }) {
     );
 }
 
+SkeletonLines.propTypes = {
+    lines: PropTypes.number,
+    height: PropTypes.number,
+};
+
 // ─── Chart Empty State ───────────────────────────────────────────────────────
 
 function ChartEmptyState() {
@@ -579,6 +579,14 @@ function CustomChartTooltip({ active, payload, label, currencyCode, isCount }) {
     );
 }
 
+CustomChartTooltip.propTypes = {
+    active: PropTypes.bool,
+    payload: PropTypes.arrayOf(PropTypes.object),
+    label: PropTypes.string,
+    currencyCode: PropTypes.string,
+    isCount: PropTypes.bool,
+};
+
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
@@ -587,6 +595,7 @@ export default function Analytics() {
         preset, startDateStr, endDateStr,
         shopCurrency, selectedCurrency,
         selectedLanguage,
+        // eslint-disable-next-line no-unused-vars
         mongoCurrencies, activeLanguages,
         metrics, topPrograms, topCustomers,
         rewardsPerDay, customerFrequencyByDate, rewardsByProgram,
@@ -628,7 +637,7 @@ export default function Analytics() {
 
             // Only show currencies that actually exist in current MongoDB orders.
             // If mongoCurrencies is empty (no orders yet), fall back to shopCode only.
-            const activeCurrencies = mongoCurrencies.length > 0 ? mongoCurrencies : [shopCode];
+            const activeCurrencies = mongoCurrenciesKey ? mongoCurrenciesKey.split(",") : [shopCode];
             setCurrencyOptions(activeCurrencies.map((cur) => ({ label: cur, value: cur })));
 
             // Determine the best default currency:
@@ -689,6 +698,7 @@ export default function Analytics() {
         submit(p, { method: "get", replace: true });
     };
 
+    // eslint-disable-next-line no-unused-vars
     const handleLanguageChange = (value) => {
         setTempLanguage(value);
         const p = buildParams({ language: value, startDate: dateFrom, endDate: dateTo });

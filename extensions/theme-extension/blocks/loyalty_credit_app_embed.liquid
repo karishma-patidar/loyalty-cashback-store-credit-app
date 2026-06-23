@@ -4,41 +4,38 @@
 {% endif %}
 
 {% assign active_program = null %}
+{% assign is_valid_schedule = false %}
+{% assign now_ts = 'now' | date: '%s' | plus: 0 %}
+
 {% for prog in programs_metafield %}
   {% if prog.status == 'Active' %}
-    {% assign active_program = prog %}
-    {% break %}
+    {% assign start_valid = true %}
+    {% if prog.startDate != blank %}
+      {% assign start_time_str = prog.startTime | default: '00:00' %}
+      {% assign start_combined = prog.startDate | append: ' ' | append: start_time_str %}
+      {% assign start_ts = start_combined | date: '%s' | plus: 0 %}
+      {% if now_ts < start_ts %}
+        {% assign start_valid = false %}
+      {% endif %}
+    {% endif %}
+
+    {% assign end_valid = true %}
+    {% if prog.enableEndDate and prog.endDate != blank %}
+      {% assign end_time_str = prog.endTime | default: '23:59' %}
+      {% assign end_combined = prog.endDate | append: ' ' | append: end_time_str %}
+      {% assign end_ts = end_combined | date: '%s' | plus: 0 %}
+      {% if now_ts > end_ts %}
+        {% assign end_valid = false %}
+      {% endif %}
+    {% endif %}
+
+    {% if start_valid and end_valid %}
+      {% assign active_program = prog %}
+      {% assign is_valid_schedule = true %}
+      {% break %}
+    {% endif %}
   {% endif %}
 {% endfor %}
-
-{% assign is_valid_schedule = false %}
-{% if active_program %}
-  {% assign now_ts = 'now' | date: '%s' | plus: 0 %}
-
-  {% assign start_valid = true %}
-  {% if active_program.startDate != blank %}
-    {% assign start_time_str = active_program.startTime | default: '00:00' %}
-    {% assign start_combined = active_program.startDate | append: ' ' | append: start_time_str %}
-    {% assign start_ts = start_combined | date: '%s' | plus: 0 %}
-    {% if now_ts < start_ts %}
-      {% assign start_valid = false %}
-    {% endif %}
-  {% endif %}
-
-  {% assign end_valid = true %}
-  {% if active_program.enableEndDate and active_program.endDate != blank %}
-    {% assign end_time_str = active_program.endTime | default: '23:59' %}
-    {% assign end_combined = active_program.endDate | append: ' ' | append: end_time_str %}
-    {% assign end_ts = end_combined | date: '%s' | plus: 0 %}
-    {% if now_ts > end_ts %}
-      {% assign end_valid = false %}
-    {% endif %}
-  {% endif %}
-
-  {% if start_valid and end_valid %}
-    {% assign is_valid_schedule = true %}
-  {% endif %}
-{% endif %}
 
 {% if active_program and is_valid_schedule %}
   <div id="loyalty-credit-app-embed-marker" style="display:none;" data-embed-active="true"></div>

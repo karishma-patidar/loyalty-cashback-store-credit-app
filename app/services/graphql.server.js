@@ -99,13 +99,15 @@ export async function setShopPrograms(admin, shopId, programs) {
     try {
       await connectMongoDB();
       const ShopModel = getShopModel(shopDomain);
-      const docs = ShopModel ? await ShopModel.find({}) : [];
+      const storeDoc = ShopModel ? await ShopModel.findOne({ shop: shopDomain }) : null;
 
       // Determine unique currencies in MongoDB
       const allEvents = [];
-      for (const doc of docs) {
-        if (doc.events && Array.isArray(doc.events)) {
-          allEvents.push(...doc.events);
+      if (storeDoc && storeDoc.details) {
+        for (const [, dateEntry] of storeDoc.details.entries()) {
+          if (dateEntry.events && Array.isArray(dateEntry.events)) {
+            allEvents.push(...dateEntry.events);
+          }
         }
       }
       const mongoCurrencies = Array.from(new Set(allEvents.map(e => e.currency))).filter(Boolean);
@@ -139,35 +141,31 @@ export async function setShopPrograms(admin, shopId, programs) {
         let totalIssued = 0;
         const progId = prog.programId || prog.id;
 
-        for (const doc of docs) {
-          if (doc.events && Array.isArray(doc.events)) {
-            for (const ev of doc.events) {
-              if (ev.status === "Completed") {
-                const evCurrency = ev.currency || shopCurrency;
+        for (const ev of allEvents) {
+          if (ev.status === "Completed") {
+            const evCurrency = ev.currency || shopCurrency;
 
-                // Discard other currencies if MongoDB contains multiple currencies
-                if (!isSingleCurrency && evCurrency !== shopCurrency) {
-                  continue;
-                }
+            // Discard other currencies if MongoDB contains multiple currencies
+            if (!isSingleCurrency && evCurrency !== shopCurrency) {
+              continue;
+            }
 
-                let amountVal = Number(ev.issuedAmount || 0);
+            let amountVal = Number(ev.issuedAmount || 0);
 
-                if (ev.programId) {
-                  // Precise matching for new events
-                  if (ev.programId === progId) {
-                    totalIssued += amountVal;
-                  }
-                } else {
-                  // Fallback for old events that lack a programId
-                  const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
-                  const isProgCustom = prog.programType === "custom" || prog.isFlowProgram;
+            if (ev.programId) {
+              // Precise matching for new events
+              if (ev.programId === progId) {
+                totalIssued += amountVal;
+              }
+            } else {
+              // Fallback for old events that lack a programId
+              const evIsCustom = ev.programType === "Custom Program" || ev.programType === "custom" || ev.programType === "fixed" || ev.programType === "percentage";
+              const isProgCustom = prog.programType === "custom" || prog.isFlowProgram;
 
-                  if (isProgCustom && evIsCustom && prog.id === firstCustomProg?.id) {
-                    totalIssued += amountVal;
-                  } else if (!isProgCustom && !evIsCustom && prog.id === firstCashbackProg?.id) {
-                    totalIssued += amountVal;
-                  }
-                }
+              if (isProgCustom && evIsCustom && prog.id === firstCustomProg?.id) {
+                totalIssued += amountVal;
+              } else if (!isProgCustom && !evIsCustom && prog.id === firstCashbackProg?.id) {
+                totalIssued += amountVal;
               }
             }
           }

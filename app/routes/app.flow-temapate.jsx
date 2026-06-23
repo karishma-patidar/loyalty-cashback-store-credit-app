@@ -14,22 +14,19 @@ import {
     Link,
     List,
     Page,
-    ResourceItem,
-    ResourceList,
     Select,
     Text,
     TextField,
-    Toast,
 } from "@shopify/polaris";
 import { ClipboardIcon, QuestionCircleIcon } from "@shopify/polaris-icons";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams, useLoaderData, useSubmit, useActionData, redirect, useFetcher } from "react-router";
+import { useNavigate, useSearchParams, useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import { getShopPrograms, setShopPrograms } from "../services/graphql.server";
 import { v4 as uuidv4 } from "uuid";
 import AdminModel from "../hooks/AdminModel";
-import { PostApi } from "../controller/Controller";
+
 import { formatCurrency } from "../controller/formatCurrency";
 import pkg from 'lodash';
 const { isEqual } = pkg;
@@ -65,7 +62,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-    const { admin, session } = await authenticate.admin(request);
+    const { admin } = await authenticate.admin(request);
     const payload = await request.json();
 
     const { shopId, programs } = await getShopPrograms(admin);
@@ -531,7 +528,11 @@ function TemplateId() {
     };
 
     const handleSupport = () => {
-        FrontChat("show");
+        if (typeof window !== "undefined" && window.FrontChat) {
+            window.FrontChat("show");
+        } else {
+            console.warn("FrontChat is not loaded.");
+        }
     };
 
     // -------------------------------------------------------------------------
@@ -760,13 +761,13 @@ function TemplateId() {
                         </Badge>
                     ) : (
                         <Badge progress="incomplete" tone="info">
-                            Paused
+                            Draft
                         </Badge>
                     )
                 }
                 primaryAction={{
                     content: settings?.status === "Active" ? "Deactivate" : "Activate",
-                    onAction: () => handleChange("status", settings?.status === "Active" ? "Paused" : "Active"),
+                    onAction: () => handleChange("status", settings?.status === "Active" ? "Draft" : "Active"),
                 }}
             >
                 {/* ---------------- Universal Save Bar ---------------------*/}
@@ -815,7 +816,15 @@ function TemplateId() {
                                         return (
                                             <div
                                                 key={menu_key}
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={() => setpagenavigation(menu_key)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" || e.key === " ") {
+                                                        e.preventDefault();
+                                                        setpagenavigation(menu_key);
+                                                    }
+                                                }}
                                                 onMouseEnter={() => setHoveredMenu(menu_key)}
                                                 onMouseLeave={() => setHoveredMenu(null)}
                                                 style={{ cursor: "pointer" }}
@@ -920,7 +929,17 @@ function TemplateId() {
                                             Save the workflow in <strong>Shopify Flow</strong> and publish it.
                                         </List.Item>
                                     </List>
-                                    <div onClick={() => setHandleSetupVideoModel(!handleSetupVideoModel)}>
+                                     <div
+                                         role="button"
+                                         tabIndex={0}
+                                         onClick={() => setHandleSetupVideoModel(!handleSetupVideoModel)}
+                                         onKeyDown={(e) => {
+                                             if (e.key === "Enter" || e.key === " ") {
+                                                 e.preventDefault();
+                                                 setHandleSetupVideoModel(!handleSetupVideoModel);
+                                             }
+                                         }}
+                                     >
                                         <Image
                                             width="100%"
                                             height="100%"
@@ -939,7 +958,27 @@ function TemplateId() {
                             <>
                                 <BlockStack gap="300">
                                     {
-                                        settings?.infoBannerDescription && <Banner tone="info" >{settings?.infoBannerDescription} <a style={{ color: "#004299", cursor: "pointer" }} onClick={handleSupport} >Need help? contact us on live chat</a></Banner>
+                                        settings?.infoBannerDescription && (
+                                            <Banner tone="info">
+                                                {settings?.infoBannerDescription}{" "}
+                                                <button
+                                                    type="button"
+                                                    style={{
+                                                        background: "none",
+                                                        border: "none",
+                                                        padding: 0,
+                                                        color: "#004299",
+                                                        cursor: "pointer",
+                                                        textDecoration: "underline",
+                                                        font: "inherit",
+                                                        display: "inline",
+                                                    }}
+                                                    onClick={handleSupport}
+                                                >
+                                                    Need help? contact us on live chat
+                                                </button>
+                                            </Banner>
+                                        )
                                     }
                                     {/* Internal name */}
                                     <Card sectioned>
@@ -1140,16 +1179,32 @@ function TemplateId() {
                                             >
                                                 <InlineStack wrap={false} gap="200">
                                                     <div
+                                                        role="button"
+                                                        tabIndex={0}
                                                         style={{ cursor: "pointer" }}
                                                         onClick={() => handleToggle(1)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === " ") {
+                                                                e.preventDefault();
+                                                                handleToggle(1);
+                                                            }
+                                                        }}
                                                         className="flow_template_steps"
                                                     >
                                                         1
                                                     </div>
                                                     <BlockStack gap="150">
                                                         <div
+                                                            role="button"
+                                                            tabIndex={0}
                                                             style={{ cursor: "pointer" }}
                                                             onClick={() => handleToggle(1)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" || e.key === " ") {
+                                                                    e.preventDefault();
+                                                                    handleToggle(1);
+                                                                }
+                                                            }}
                                                         >
                                                             <Text as="h2" variant="headingMd">
                                                                 Apply a campaign template
@@ -1237,16 +1292,32 @@ function TemplateId() {
                                             >
                                                 <InlineStack wrap={false} gap="200">
                                                     <div
+                                                        role="button"
+                                                        tabIndex={0}
                                                         style={{ cursor: "pointer" }}
                                                         onClick={() => handleToggle(2)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === " ") {
+                                                                e.preventDefault();
+                                                                handleToggle(2);
+                                                            }
+                                                        }}
                                                         className="flow_template_steps"
                                                     >
                                                         2
                                                     </div>
                                                     <BlockStack gap="150">
                                                         <div
+                                                            role="button"
+                                                            tabIndex={0}
                                                             style={{ cursor: "pointer" }}
                                                             onClick={() => handleToggle(2)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" || e.key === " ") {
+                                                                    e.preventDefault();
+                                                                    handleToggle(2);
+                                                                }
+                                                            }}
                                                         >
                                                             <Text as="h2" variant="headingMd">
                                                                 Connect program to Shopify Flow
@@ -1337,16 +1408,32 @@ function TemplateId() {
                                             >
                                                 <InlineStack wrap={false} gap="200">
                                                     <div
+                                                        role="button"
+                                                        tabIndex={0}
                                                         style={{ cursor: "pointer" }}
                                                         onClick={() => handleToggle(3)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter" || e.key === " ") {
+                                                                e.preventDefault();
+                                                                handleToggle(3);
+                                                            }
+                                                        }}
                                                         className="flow_template_steps"
                                                     >
                                                         3
                                                     </div>
                                                     <BlockStack gap="150">
                                                         <div
+                                                            role="button"
+                                                            tabIndex={0}
                                                             style={{ cursor: "pointer" }}
                                                             onClick={() => handleToggle(3)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === "Enter" || e.key === " ") {
+                                                                    e.preventDefault();
+                                                                    handleToggle(3);
+                                                                }
+                                                            }}
                                                         >
                                                             <Text as="h2" variant="headingMd">
                                                                 Active the workflow
@@ -1368,7 +1455,7 @@ function TemplateId() {
                                                                         paddingBottom: "8px",
                                                                     }}
                                                                 >
-                                                                    Click <strong>"Turn on workflow"</strong> to
+                                                                    Click <strong>&quot;Turn on workflow&quot;</strong> to
                                                                     start using your workflow
                                                                 </div>
                                                             </BlockStack>

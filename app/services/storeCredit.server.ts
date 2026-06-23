@@ -4,8 +4,8 @@
  */
 
 import { getShopPrograms as getShopProgramsRaw } from "./graphql.server";
-import { authenticate } from "../shopify.server";
-import connectMongoDB, { getShopModel } from "../db.mongodb.server";
+import { authenticate, sessionStorage } from "../shopify.server";
+import { connectMongoDB, getShopModel } from "../db.mongodb.server";
 
 export type AdminClient = NonNullable<Awaited<ReturnType<typeof authenticate.webhook>>["admin"]>;
 
@@ -16,6 +16,8 @@ export interface ProgramSettings {
   amount: string;
   amountType: string;
   maxAmount?: string;
+  startDate?: string;
+  startTime?: string;
   enableEndDate?: boolean;
   endDate?: string;
   endTime?: string;
@@ -34,6 +36,10 @@ export interface ProgramSettings {
   programName?: string;
   internalName?: string;
   isFlowProgram?: boolean;
+  currencyCode?: string;
+  msgProduct?: string;
+  msgCart?: string;
+  showCartDrawerPoints?: boolean;
 }
 
 export interface ShopifyOrderPayload {
@@ -304,13 +310,123 @@ export function calculateExpirationDate(program: ProgramSettings): string | null
 
 /**
  * Verify if the App Embed or App Block is added and enabled on the merchant's main theme.
- * Uses Online Store Theme GraphQL API.
  * 
  * @param admin - Authenticated Shopify Admin client
+ * @param shop - The merchant's shop domain
  * @returns boolean - True if the app block/embed is found and not disabled, false otherwise.
  */
-export async function verifyAppEmbedEnabled(_admin: AdminClient): Promise<boolean> {
-  void _admin;
+export async function verifyAppEmbedEnabled(admin: AdminClient, shop: string): Promise<boolean> {
+  try {
+    const response = await admin.graphql(`#graphql
+      query {
+        themes(first: 10) {
+          edges {
+            node {
+              id
+              role
+            }
+          }
+        }
+      }
+    `);
+    const data = await response.json();
+    const mainTheme = data?.data?.themes?.edges?.find(
+      (edge: { node: { role: string; id: string } }) => edge.node.role === "MAIN"
+    )?.node;
+    if (!mainTheme) {
+      console.log("[-] No main theme found.");
+      return false;
+    }
+    const themeId = mainTheme.id.split("/").pop();
+
+    const sessions = await sessionStorage.findSessionsByShop(shop);
+    const session = sessions.find((s) => s.isOnline === false || !s.isOnline) || sessions[0];
+
+    if (!session || !session.accessToken) {
+      console.log("[-] No offline session found for shop:", shop);
+      return false;
+    }
+
+    const apiVersion = "2026-01";
+    const fetchUrl = `https://${shop}/admin/api/${apiVersion}/themes/${themeId}/assets.json?asset[key]=config/settings_data.json`;
+    const res = await fetch(fetchUrl, {
+      headers: {
+        "X-Shopify-Access-Token": session.accessToken,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      console.log("[-] Failed to fetch theme settings:", res.status);
+      return false;
+    }
+
+    const assetJson = await res.json();
+    const settingsValue = assetJson?.asset?.value;
+    if (!settingsValue) {
+      return false;
+    }
+
+    const settingsData = JSON.parse(settingsValue);
+    const blocks = settingsData?.current?.blocks || {};
+    
+    let embedEnabled = false;
+    for (const key of Object.keys(blocks)) {
+      const block = blocks[key];
+      if (block.type && block.type.includes("loyalty_credit_app_embed")) {
+        if (block.disabled === false || block.disabled === undefined) {
+          embedEnabled = true;
+          break;
+        }
+      }
+    }
+
+    return embedEnabled;
+  } catch (error) {
+    console.error("❌ Error checking theme embed status in verifyAppEmbedEnabled:", error);
+    return false;
+  }
+}
+
+/**
+ * Checks if the program status is active and falls within configured date boundaries.
+ * 
+ * @param program - The loyalty program settings
+ * @returns boolean - True if the program is active and valid, false otherwise.
+ */
+export function isProgramScheduleActive(program: ProgramSettings): boolean {
+  if (program.status !== 'Active' && program.status !== 'true' && program.status !== true) {
+    return false;
+  }
+
+  const now = new Date();
+
+  if (program.startDate) {
+    const startTimeStr = program.startTime || '00:00';
+    const startCombined = `${program.startDate}T${startTimeStr}`;
+    try {
+      const start = new Date(startCombined);
+      if (start.toString() !== 'Invalid Date' && now < start) {
+        return false;
+      }
+    } catch (e) {
+      console.error("Error parsing program startDate:", e);
+    }
+  }
+
+  if (program.enableEndDate && program.endDate) {
+    const endTimeStr = program.endTime || '23:59';
+    const endCombined = `${program.endDate}T${endTimeStr}`;
+    try {
+      const end = new Date(endCombined);
+      if (end.toString() !== 'Invalid Date' && now > end) {
+        return false;
+      }
+    } catch (e) {
+      console.error("Error parsing program endDate:", e);
+    }
+  }
+
   return true;
 }
 
@@ -380,27 +496,29 @@ export async function getStoreCreditMetrics(
   try {
     const ShopModel = getShopModel(shop);
     if (ShopModel) {
-      const docs = await ShopModel.find({});
-      for (const doc of docs) {
-        if (doc.events && Array.isArray(doc.events)) {
-          for (const ev of doc.events) {
-            if (!ev.orderId) continue;
-            const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(doc.createdAt);
-            if (eventDate >= start && eventDate <= end) {
-              const evCurrency = ev.currency || currencyCode;
-              if (evCurrency === currencyCode) {
-                // Redemption sum from MongoDB events redeemedAmount
-                const redeemedAmt = Number(ev.redeemedAmount || 0);
-                redeemedCredit += redeemedAmt;
-                if (redeemedAmt > 0 && ev.customerId) {
-                  redeemingCustomersSet.add(ev.customerId);
-                }
+      const storeDoc = await ShopModel.findOne({ shop });
+      if (storeDoc && storeDoc.details) {
+        for (const [dateStr, dateEntry] of storeDoc.details.entries()) {
+          if (dateEntry && Array.isArray(dateEntry.events)) {
+            for (const ev of dateEntry.events) {
+              if (!ev.orderId) continue;
+              const eventDate = ev.createdAt ? new Date(ev.createdAt) : new Date(dateStr);
+              if (eventDate >= start && eventDate <= end) {
+                const evCurrency = ev.currency || currencyCode;
+                if (evCurrency === currencyCode) {
+                  // Redemption sum from MongoDB events redeemedAmount
+                  const redeemedAmt = Number(ev.redeemedAmount || 0);
+                  redeemedCredit += redeemedAmt;
+                  if (redeemedAmt > 0 && ev.customerId) {
+                    redeemingCustomersSet.add(ev.customerId);
+                  }
 
-                if (ev.status === "Completed") {
-                  const amountVal = Number(ev.issuedAmount || ev.amount || 0);
-                  issuedCredit += amountVal;
-                  if (ev.customerId) {
-                    uniqueCustomersSet.add(ev.customerId);
+                  if (ev.status === "Completed") {
+                    const amountVal = Number(ev.issuedAmount || ev.amount || 0);
+                    issuedCredit += amountVal;
+                    if (ev.customerId) {
+                      uniqueCustomersSet.add(ev.customerId);
+                    }
                   }
                 }
               }

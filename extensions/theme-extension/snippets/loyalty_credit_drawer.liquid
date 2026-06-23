@@ -65,6 +65,11 @@
     }
 
     async function updateCartDrawerCashback(container) {
+      const marker = document.getElementById('loyalty-credit-app-embed-marker');
+      if (!marker) {
+        container.style.display = 'none';
+        return;
+      }
       try {
         const res = await fetch('/cart.js');
         const cartData = await res.json();
@@ -150,6 +155,11 @@
 
     // --- Product Page Live Updates (Variants & Quantities) ---
     function updateProductPageCashback(block, quantity = 1, variantPrice = null) {
+      const marker = document.getElementById('loyalty-credit-app-embed-marker');
+      if (!marker) {
+        block.style.display = 'none';
+        return;
+      }
       const basePriceStr = block.getAttribute('data-product-price');
       const amountStr = block.getAttribute('data-amount');
       const amountType = block.getAttribute('data-amount-type');
@@ -414,6 +424,10 @@
       if (!marker) {
         const existing = document.querySelector('.loyalty-credit-drawer-injected');
         if (existing) existing.style.display = 'none';
+        const blocks = document.querySelectorAll('.loyalty-credit-block');
+        blocks.forEach(block => {
+          block.style.setProperty('display', 'none', 'important');
+        });
         return;
       }
 

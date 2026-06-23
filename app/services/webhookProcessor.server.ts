@@ -7,6 +7,8 @@ import {
   AdminClient,
   ShopifyOrderPayload,
   ProgramSettings,
+  verifyAppEmbedEnabled,
+  isProgramScheduleActive,
 } from './storeCredit.server';
 import { connectMongoDB, getCustomerModel } from '../db.mongodb.server';
 
@@ -175,67 +177,50 @@ function extractRedeemedAmount(
 // ─── MongoDB Helpers ──────────────────────────────────────────────────────────
 
 async function upsertOrderEvent(
-  ShopModel: ReturnType<typeof getCustomerModel>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  storeDoc: any,
   dateStr: string,
   orderId: string,
   newEvent: OrderEvent,
-  existingDocId?: string,
 ): Promise<void> {
-  if (!ShopModel) return;
+  if (!storeDoc) return;
+
+  if (!storeDoc.details) {
+    storeDoc.details = new Map();
+  }
+
   const programId = newEvent.programId;
+  let found = false;
 
-  if (existingDocId) {
-    const query: Record<string, unknown> = { _id: existingDocId, 'events.orderId': orderId };
-    const arrayFilters: Record<string, unknown>[] = [{ 'elem.orderId': orderId }];
-
-    if (programId) {
-      query['events.programId'] = programId;
-      arrayFilters[0]['elem.programId'] = programId;
-    } else {
-      query['events.programId'] = { $exists: false };
-      arrayFilters[0]['elem.programId'] = { $exists: false };
-    }
-
-    const updateResult = await ShopModel.updateOne(
-      query,
-      { $set: { 'events.$[elem]': newEvent } },
-      { arrayFilters }
-    );
-    
-    if (updateResult.matchedCount > 0 || updateResult.modifiedCount > 0) {
-      return;
-    }
-
-    // Event wasn't found in the array, push it
-    await ShopModel.updateOne(
-      { _id: existingDocId },
-      { $push: { events: newEvent } }
-    );
-    return;
-  }
-
-  const elemMatchQuery: Record<string, unknown> = { orderId };
-  if (programId) {
-    elemMatchQuery.programId = programId;
-  } else {
-    elemMatchQuery.programId = { $exists: false };
-  }
-
-  const updateResult = await ShopModel.updateOne(
-    { date: dateStr, 'events': { $not: { $elemMatch: elemMatchQuery } } },
-    { $push: { events: newEvent } },
-  );
-
-  if (updateResult.matchedCount === 0) {
-    const dateDoc = await ShopModel.findOne({ date: dateStr });
-    if (!dateDoc) {
-      try {
-        await ShopModel.create({ date: dateStr, events: [newEvent] });
-      } catch (err) {
-        console.error(`❌ Failed to create date doc for ${orderId}:`, err);
+  for (const [dStr, dateEntry] of storeDoc.details.entries()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const events = (dateEntry as any).events || [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const idx = events.findIndex((ev: any) => {
+      if (programId) {
+        return ev.orderId === orderId && ev.programId === programId;
+      } else {
+        return ev.orderId === orderId && !ev.programId;
       }
+    });
+
+    if (idx !== -1) {
+      events[idx] = newEvent;
+      storeDoc.details.set(dStr, { events });
+      found = true;
+      break;
     }
   }
+
+  if (!found) {
+    const dateEntry = storeDoc.details.get(dateStr) || { events: [] };
+    const events = dateEntry.events || [];
+    events.push(newEvent);
+    storeDoc.details.set(dateStr, { events });
+  }
+
+  storeDoc.markModified('details');
+  await storeDoc.save();
 }
 
 // ─── Webhook Handlers ─────────────────────────────────────────────────────────
@@ -244,7 +229,7 @@ async function handleOrderCreate(
   ctx: WebhookContext,
   existingTx: OrderEvent | undefined,
 ): Promise<void> {
-  const { adminClient, orderPayload, shop, program, ShopModel, todayStr,
+  const { adminClient, orderPayload, shop, program, storeDoc, todayStr,
     customerId, customerName, orderId, orderName, orderGid,
     cashbackAmount, currencyCode } = ctx;
 
@@ -301,7 +286,7 @@ async function handleOrderCreate(
     redeemedAmount, issuedAt: null, createdAt: new Date(),
   };
 
-  await upsertOrderEvent(ShopModel, todayStr, orderId, newEvent);
+  await upsertOrderEvent(storeDoc, todayStr, orderId, newEvent);
   await updateOrderShopifyData(
     adminClient, orderId, buildOrderMetafields(orderGid, cashbackAmount, currencyCode, newEvent, 'Pending'),
   );
@@ -311,9 +296,8 @@ async function handleOrderCreate(
 async function handleOrderFulfilled(
   ctx: WebhookContext,
   existingTx: OrderEvent | undefined,
-  existingDocId?: string,
 ): Promise<void> {
-  const { adminClient, orderPayload, shop, program, ShopModel, todayStr,
+  const { adminClient, orderPayload, shop, program, storeDoc, todayStr,
     customerId, customerName, orderId, orderName, orderGid,
     cashbackAmount, currencyCode } = ctx;
 
@@ -374,7 +358,7 @@ async function handleOrderFulfilled(
       createdAt: existingTx?.createdAt ?? new Date(),
     };
 
-    await upsertOrderEvent(ShopModel, todayStr, orderId, delayEvent, existingDocId);
+    await upsertOrderEvent(storeDoc, todayStr, orderId, delayEvent);
     console.log(`🎉 Scheduled order ${orderName} for delay (${delayDays} days) for program ${programId}.`);
     return;
   }
@@ -410,7 +394,7 @@ async function handleOrderFulfilled(
     expiresAt: expiresAt ? new Date(expiresAt) : null,
   };
 
-  await upsertOrderEvent(ShopModel, todayStr, orderId, eventToSave, existingDocId);
+  await upsertOrderEvent(storeDoc, todayStr, orderId, eventToSave);
 
   if (isSuccessful) {
     const appNote = `[Loyalty App] Issued ${cashbackAmount} ${currencyCode} store credit from program ${program.programName || program.name}.`;
@@ -453,7 +437,8 @@ interface WebhookContext {
   orderPayload: ShopifyOrderPayload;
   shop: string;
   program: ProgramSettings;
-  ShopModel: ReturnType<typeof getCustomerModel>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  storeDoc: any;
   todayStr: string;
   customerId: string;
   customerName: string;
@@ -494,6 +479,11 @@ export async function processOrderWebhook(
     }
   }
 
+  const isEmbedEnabled = await verifyAppEmbedEnabled(adminClient, shop);
+  if (!isEmbedEnabled) {
+    return console.log(`[-] Aborted order webhook: App Embed is currently DISABLED in theme customization for shop ${shop}.`);
+  }
+
   // Background: process any delayed credits
   processDelayedCredits(shop, adminClient).catch(
     (err) => console.error('❌ Error processing delayed credits:', err),
@@ -514,11 +504,9 @@ export async function processOrderWebhook(
     console.error('Error fetching app_active status:', err);
   }
 
-  // Fetch all active loyalty programs
+  // Fetch all active loyalty programs and filter by schedule/status
   const programs = await getShopPrograms(adminClient);
-  const activePrograms = programs?.filter((p: ProgramSettings) => 
-    (p.status === 'Active' || p.status === 'true' || p.status === true)
-  ) || [];
+  const activePrograms = programs?.filter(isProgramScheduleActive) || [];
 
   if (!activePrograms.length) {
     return console.log('[-] Aborted: No Active loyalty programs configured.');
@@ -534,8 +522,14 @@ export async function processOrderWebhook(
   const ShopModel = getCustomerModel(shop);
   if (!ShopModel) return console.error('❌ ShopModel could not be initialized');
 
+  let storeDoc = await ShopModel.findOne({ shop });
+  if (!storeDoc) {
+    storeDoc = await ShopModel.create({ shop, details: new Map() });
+  } else if (!storeDoc.details) {
+    storeDoc.details = new Map();
+  }
+
   const todayStr = new Date().toISOString().split('T')[0];
-  const existingDoc = await ShopModel.findOne({ 'events.orderId': orderId });
 
   const customerName =
     `${orderPayload?.customer?.first_name ?? ''} ${orderPayload?.customer?.last_name ?? ''}`.trim() || 'Anonymous Customer';
@@ -564,14 +558,24 @@ export async function processOrderWebhook(
     console.log(`[+] Evaluating program: ${programName} (${programId})`);
 
     const isCustom = program.programType === 'custom';
-    const existingTx: OrderEvent | undefined = existingDoc?.events?.find(
-      (e: OrderEvent) => e.orderId === orderId && (isCustom ? e.programId === programId : !e.programId),
-    );
+    
+    let existingTx: OrderEvent | undefined;
+    if (storeDoc.details) {
+      for (const [, dateEntry] of storeDoc.details.entries()) {
+        const match = dateEntry.events?.find(
+          (e: OrderEvent) => e.orderId === orderId && (isCustom ? e.programId === programId : !e.programId)
+        );
+        if (match) {
+          existingTx = match;
+          break;
+        }
+      }
+    }
 
     const cashbackAmount = existingTx?.issuedAmount ?? calculateCashbackAmount(program, mappedOrder);
 
     const ctx: WebhookContext = {
-      adminClient, orderPayload, shop, program, ShopModel, todayStr,
+      adminClient, orderPayload, shop, program, storeDoc, todayStr,
       customerId, customerName, orderId, orderName, orderGid,
       cashbackAmount, currencyCode,
     };
@@ -580,7 +584,7 @@ export async function processOrderWebhook(
       if (topic === 'ORDERS_CREATE') {
         await handleOrderCreate(ctx, existingTx);
       } else if (topic === 'ORDERS_FULFILLED') {
-        await handleOrderFulfilled(ctx, existingTx, existingDoc?._id);
+        await handleOrderFulfilled(ctx, existingTx);
       }
     } catch (err) {
       console.error(`❌ Error processing program ${programName} (${programId}) natively:`, err);
@@ -601,27 +605,38 @@ export async function processDelayedCredits(
       return console.error('❌ ShopModel could not be initialized for delayed credits');
     }
 
-    const now = new Date();
-    const docs = await ShopModel.find({
-      events: { $elemMatch: { status: 'Pending', processAt: { $lte: now } } },
-    });
-    if (!docs?.length) return;
+    const isEmbedEnabled = await verifyAppEmbedEnabled(adminClient, shop);
+    if (!isEmbedEnabled) {
+      return console.log(`[-] Aborted delayed credits processing: App Embed is disabled for shop ${shop}.`);
+    }
 
+    const storeDoc = await ShopModel.findOne({ shop });
+    if (!storeDoc || !storeDoc.details) return;
+
+    const now = new Date();
     const programs = await getShopPrograms(adminClient);
     if (!programs?.length) {
       return console.log('[-] Aborted delayed processing: No programs.');
     }
 
-    for (const doc of docs) {
-      for (const ev of doc.events) {
-        const isReady = ev.status === 'Pending' && ev.processAt && ev.processAt <= now;
+    let modified = false;
+    for (const [, dateEntry] of storeDoc.details.entries()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const events = (dateEntry as any).events || [];
+      for (const ev of events) {
+        const isReady = ev.status === 'Pending' && ev.processAt && new Date(ev.processAt) <= now;
         if (!isReady) continue;
 
         console.log(`[+] Processing delayed credit for Order ${ev.orderName} (Program ${ev.programId})`);
 
         const program = programs.find((p: ProgramSettings) => ev.programId ? (p.programId === ev.programId || p.id === ev.programId) : (!p.isFlowProgram && p.programType !== 'custom')) || programs[0];
         
-        const expiresAt = ev.expiresAt?.toISOString() ?? calculateExpirationDate(program);
+        if (!program || !isProgramScheduleActive(program)) {
+          console.log(`[-] Skipping delayed credit for Order ${ev.orderName} because program ${ev.programId || 'default'} is not active or has expired.`);
+          continue;
+        }
+
+        const expiresAt = ev.expiresAt instanceof Date ? ev.expiresAt.toISOString() : (ev.expiresAt?.toISOString?.() ?? ev.expiresAt ?? calculateExpirationDate(program));
         const shouldNotify = ev.shouldNotify ?? !!program.notifyEmail;
 
         const res = await addStoreCredit(
@@ -636,20 +651,9 @@ export async function processDelayedCredits(
           ev.emailStatus = program.notifyEmail ? (emailFailed ? 'Failed' : 'Sent') : ev.emailStatus;
           ev.emailFailReason = emailFailed ? 'Unsupported API' : '';
           ev.issuedAt = new Date();
-          ev.expiresAt = expiresAt ? new Date(expiresAt) : null;
-
-          const arrayFilters: Record<string, unknown>[] = [{ 'elem.orderId': ev.orderId }];
-          if (ev.programId) {
-            arrayFilters[0]['elem.programId'] = ev.programId;
-          } else {
-            arrayFilters[0]['elem.programId'] = { $exists: false };
+          if (expiresAt) {
+            ev.expiresAt = new Date(expiresAt);
           }
-
-          await ShopModel.updateOne(
-            { _id: doc._id },
-            { $set: { 'events.$[elem]': ev } },
-            { arrayFilters }
-          );
 
           const appNote = `[Loyalty App] Issued ${ev.issuedAmount} ${ev.currency ?? 'USD'} store credit (Delayed, Program ${ev.programName}).`;
           const orderGid = toGid('Order', ev.orderId);
@@ -680,26 +684,20 @@ export async function processDelayedCredits(
           ], updatedNote);
 
           console.log(`🎉 [Delayed] Updated order ${ev.orderName} to COMPLETED.`);
+          modified = true;
         } else {
           ev.status = 'Failed';
           ev.emailStatus = 'Failed';
           ev.emailFailReason = res?.userErrors?.map((e: { message: string }) => e.message).join(', ') ?? 'Failed';
-
-          const arrayFilters: Record<string, unknown>[] = [{ 'elem.orderId': ev.orderId }];
-          if (ev.programId) {
-            arrayFilters[0]['elem.programId'] = ev.programId;
-          } else {
-            arrayFilters[0]['elem.programId'] = { $exists: false };
-          }
-
-          await ShopModel.updateOne(
-            { _id: doc._id },
-            { $set: { 'events.$[elem]': ev } },
-            { arrayFilters }
-          );
           console.log(`❌ [Delayed] Failed for ${ev.orderName}: ${ev.emailFailReason}`);
+          modified = true;
         }
       }
+    }
+
+    if (modified) {
+      storeDoc.markModified('details');
+      await storeDoc.save();
     }
   } catch (err) {
     console.error('❌ Error processing delayed credits:', err);
